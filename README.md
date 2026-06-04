@@ -1,11 +1,14 @@
 # PR Platform
 
-A workspace for Indian PR agencies to run influencer-brand campaigns end-to-end:
+A workspace for Indian PR agencies to run influencer–brand campaigns end-to-end:
 **briefs → contracts → deliverables → payouts** — all in INR, all in one place.
 
-Built to replace the current Instagram-DM + Gmail workflow that leaves brands and
+Built to replace the Instagram-DM + Gmail workflow that leaves brands and
 influencers without visibility into campaign status, contract state, or when
 they'll get paid.
+
+> Full system design, build status, and an end-to-end test plan live in
+> [`ARCHITECTURE.md`](./ARCHITECTURE.md). Start there if you're contributing.
 
 ---
 
@@ -24,33 +27,10 @@ they'll get paid.
 | Framework      | Next.js 16 (App Router) + TypeScript                  |
 | Styling        | Tailwind v4                                           |
 | Database/Auth  | Supabase (Postgres + Auth + Storage with RLS)         |
-| Payments       | **Razorpay Route** (marketplace payouts in INR)       |
-| E-signature    | **Digio** (Aadhaar e-sign — legally strong in India)  |
+| Payments       | **Razorpay Route** — marketplace payouts in INR       |
+| E-signature    | **Leegality** — Aadhaar e-sign, legally strong in India |
 | Email          | Resend                                                |
 | Hosting        | Vercel                                                |
-
-## Project layout
-
-```
-src/
-  app/
-    (auth)/                  login + signup
-    agency/                  agency persona dashboard
-    brand/                   brand persona dashboard
-    influencer/              influencer persona dashboard
-    api/webhooks/
-      razorpay/              payout status updates
-      digio/                 contract sign status updates
-  components/                shared UI (PersonaShell, etc.)
-  lib/
-    supabase/                browser, server, and middleware clients
-    razorpay/                Razorpay SDK wrapper
-    money.ts                 paise <-> INR helpers
-  middleware.ts              refreshes Supabase session on every request
-supabase/
-  migrations/
-    0001_initial_schema.sql  full multi-tenant schema + RLS policies
-```
 
 ## Data model (high-level)
 
@@ -69,7 +49,7 @@ agencies ──< agency_members
 ```
 
 All money is stored as **bigint paise** (1 INR = 100 paise) to avoid float drift.
-Every state-changing action should also write to `audit_log` for transparency.
+Every state-changing server action also writes to `audit_log` for transparency.
 
 ## Local setup
 
@@ -78,15 +58,16 @@ Every state-changing action should also write to `audit_log` for transparency.
    npm install
    ```
 
-2. Copy env template and fill in values:
+2. Copy env template and fill in values (Supabase, Razorpay, Leegality, Resend):
    ```bash
    cp .env.example .env.local
    ```
 
-3. Create a Supabase project (free tier) and run the migration:
-   ```bash
-   # Via Supabase dashboard SQL editor, paste the contents of:
-   #   supabase/migrations/0001_initial_schema.sql
+3. Create a Supabase project and apply the migrations in order via the SQL editor:
+   ```
+   supabase/migrations/0001_initial_schema.sql
+   supabase/migrations/0002_auth_trigger.sql
+   supabase/migrations/0003_contract_digio_fields.sql
    ```
 
 4. Run the dev server:
@@ -94,30 +75,33 @@ Every state-changing action should also write to `audit_log` for transparency.
    npm run dev
    ```
 
-## What's stubbed vs. built
+## Status at a glance
 
-**Built:**
-- Project scaffolding, routing structure for all 3 personas
-- Full Postgres schema with RLS policies
-- Supabase client setup (browser + server + middleware)
-- Razorpay client wrapper
-- Webhook receivers for Razorpay and Digio (signature verification only)
+**Built**
+- Magic-link auth with role-based dashboard routing
+- Agency: campaigns (list / create / detail), influencer roster, contract detail with deliverable management and review
+- Influencer: invitation accept/decline, contract list and detail, deliverable submission and resubmission
+- Supabase schema, RLS policies, and the `handle_new_user` bootstrap trigger
+- Leegality e-sign client + webhook
+- Razorpay webhook with signature verification
+- Audit log writes across the flows
 
-**TODO (next iteration):**
-- Auth flow (signup with role selection, magic-link login)
-- Agency: campaign create → invite influencer → approve content → trigger payout
-- Influencer: invitation accept → Digio e-sign redirect → submit content
-- Brand: read-only campaign view + content approval
-- Razorpay Contact + Fund Account creation on influencer onboarding
-- Email notifications (invitation sent, contract ready to sign, payout completed)
-- Audit log writes on all state changes
+**Partial / not yet built**
+- Razorpay webhook event handling and payout initiation
+- Brand portal pages beyond scaffolding
+- Persona dashboards (`/agency`, `/brand`, `/influencer`) are still stubs
+- Brand creation UI for agencies (currently SQL-only)
+- Resend integration (no emails sent yet)
+
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md#6-status--whats-done--whats-left)
+for the full breakdown and a step-by-step test plan.
 
 ## Why these choices
 
-- **Supabase over a hand-rolled API:** RLS gives us per-row tenant isolation
-  for free, which matters when one DB serves agencies, brands, and influencers.
-- **Razorpay over Stripe:** Stripe Connect has limited India payout support;
+- **Supabase over a hand-rolled API** — RLS gives per-row tenant isolation for
+  free, which matters when one DB serves agencies, brands, and influencers.
+- **Razorpay over Stripe** — Stripe Connect has limited India payout support;
   Razorpay Route is the de-facto standard for INR marketplace payouts and
   handles GST/TDS natively.
-- **Digio over DocuSign:** Aadhaar e-sign is cheaper, faster, and legally
+- **Leegality over DocuSign** — Aadhaar e-sign is cheaper, faster, and legally
   stronger in India under the IT Act, 2000.

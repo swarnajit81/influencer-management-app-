@@ -10,13 +10,19 @@ Onboarding doc for developers. Covers business model, system design, tech stack,
 
 PR agencies in India currently run influencer campaigns over Instagram DMs and Gmail. There is no system of record for briefs, contracts, deliverables, or payouts. This app replaces that workflow.
 
-### Three personas
+### Scope decision: agency-first
 
-| Role | What they do | How they sign up |
+**v1 ships one app: the agency app.** Brands and influencers are touchpoints, not users — they interact via tokenised magic-link pages emailed to them per campaign / invitation. No signup, no login, no separate dashboard.
+
+The existing `/influencer/*` and `/brand/*` route trees in the repo predate this decision. They remain in the codebase but are **not the v1 surface**. New persona work goes into the magic-link flow; do not add features to `/influencer/*` or `/brand/*` unless explicitly scoped.
+
+### Personas
+
+| Role | What they do | How they reach the app (v1) |
 |---|---|---|
-| **Agency member** | Creates campaigns, invites influencers, approves deliverables, triggers payouts. Pays the platform. | Self-signup. Trigger auto-creates an `agencies` row + `agency_members` row with `role=owner`. |
-| **Brand member** | Approves briefs and content submissions. Read-only view of spend and status. | Invitation-only. Created on brand_member invite (UI for this not built yet). |
-| **Influencer** | Accepts/declines invitations. Signs contracts via Aadhaar e-sign. Submits deliverables. Receives payouts to verified bank account. | Self-signup. Trigger auto-creates an `influencers` row. |
+| **Agency member** | Creates campaigns, invites influencers, approves deliverables, triggers payouts. Pays the platform. | Self-signup with magic-link OTP. Trigger auto-creates `agencies` + `agency_members(role=owner)`. |
+| **Brand contact** | Approves briefs and content submissions. Sees campaign status and spend. | Tokenised magic-link emailed per campaign. No `auth.users` row, no `brand_members` row required in v1. Token resolves to a `brands` row scoped to the campaign. |
+| **Influencer** | Accepts/declines invitation. Signs contract. Submits deliverables. Receives payout. | Tokenised magic-link emailed per invitation. `influencers` row created on token first-use (no full auth signup needed). |
 
 ### Money flow
 
@@ -184,15 +190,21 @@ Helpers (`src/lib/auth/getCurrentUser.ts`):
 - **Agency / brands page** — read-only list. "New brand" button disabled. Brand creation must be done via SQL.
 - **Leegality e-sign** — client + webhook are built but **not called from the invitation acceptance flow**. Acceptance currently writes `status=signed_by_influencer` directly with `esign_skipped: true` in audit metadata.
 
-### Not started
+### Not started (v1)
 
-- All dashboards (`/agency`, `/brand`, `/influencer`) — stub pages with TODO comments.
+- Agency dashboard (`/agency`) — stub.
 - Agency payouts queue (`/agency/payouts`).
-- Brand portal: `/brand/campaigns/[campaignId]`, `/brand/approvals` (nav links exist, pages missing).
-- Influencer payouts history (`/influencer/payouts`).
-- Brand member invitation flow (creates `brand_members` row).
+- Magic-link routes for brand + influencer (e.g. `/p/invitation/[token]`, `/p/campaign/[token]`) — replaces the deferred standalone portals.
+- Token issuance + verification (signed, short-lived, single-use for accept/sign; reusable for status views).
 - Razorpay Contact + Fund Account creation on influencer onboarding.
 - Resend integration — no emails sent anywhere despite the package being installed.
+
+### Deferred to v2 (out of v1 scope)
+
+- Standalone brand portal pages (`/brand/*`) — existing stubs stay but get no work.
+- Standalone influencer portal pages (`/influencer/*`) — existing built pages stay (they still work for accounts that signed up before this scope cut) but get no new features.
+- `brand_members` invitation flow — v1 uses per-campaign magic links instead, no `brand_members` row needed.
+- Multi-user brand teams.
 
 ### Routes at a glance
 
@@ -347,10 +359,15 @@ Razorpay webhook does signature verification but does not act on events yet.
 
 ## 9. Where to start contributing
 
+v1 is **agency app + magic-link touchpoints for brand and influencer**. Do not add features to `/influencer/*` or `/brand/*` routes — those are deferred to v2.
+
 Smallest useful PRs in rough priority order:
 
-1. Wire **Resend** into `inviteInfluencerAction` so influencers get an email when invited.
-2. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
-3. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
+1. Wire **Resend** into `inviteInfluencerAction` — email contains the magic-link to the invitation page.
+2. Add **token issuance + verification** (HMAC-signed, short TTL) and a `tokens` table (or signed JWT-style payload) for invitation + campaign-status links.
+3. Build the public **invitation magic-link page** (`/p/invitation/[token]`) — view offer, accept/decline, kick off e-sign, submit deliverables.
 4. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
-5. Replace MVP "click-to-sign" with the real **Leegality flow** inside `acceptInvitationAction` — `createInvitation` + persist signing URLs.
+5. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
+6. Build the public **campaign status page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.
+7. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
+8. Replace MVP "click-to-sign" with the real **Leegality flow** inside `acceptInvitationAction` — `createInvitation` + persist signing URLs.

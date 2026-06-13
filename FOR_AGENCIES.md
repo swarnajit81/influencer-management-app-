@@ -35,17 +35,21 @@ If two of those three describe you, keep reading.
 
 ## The fix (this platform)
 
-One workspace. Three logins. Every state change is recorded.
+One workspace for the agency. Brands and influencers touch the platform only through secure links sent to them — no separate app to learn, no login to remember. Every state change is recorded.
 
 | Pain                      | How we solve it                                                                                                                                                |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Briefs drift across email | Brief lives on the campaign. One canonical version. Brand sees the same thing the influencer sees.                                                             |
-| Offers live in DMs        | Agency sends a structured invitation (amount, deliverables, deadlines). Influencer accepts or declines in one click.                                           |
+| Briefs drift across email | Brief lives on the campaign. One canonical version. Brand opens a link, sees the same thing the influencer sees.                                               |
+| Offers live in DMs        | Agency sends a structured invitation (amount, deliverables, deadlines) via email link. Influencer accepts or declines in one click — no signup.                |
 | Contracts take days       | Contract auto-generated from the accepted invitation. Aadhaar e-sign via Leegality — legally stronger than DocuSign under the IT Act, 2000. Minutes, not days. |
-| Approval chaos            | Influencer submits a content URL. Brand or agency approves, requests changes, or marks live. Every action timestamped.                                         |
+| Approval chaos            | Influencer submits a content URL on the invitation page. Agency approves, requests changes, or marks live. Every action timestamped.                           |
 | Manual payouts            | Razorpay Route handles payouts in INR. GST/TDS handled natively. Status updates flow back automatically.                                                       |
 | No audit trail            | Every state-changing action writes to an audit log: who did what, when, on which record.                                                                       |
-| "Where are we?"           | Each persona has their own dashboard. Brand sees their campaigns. Agency sees everything. Influencer sees their work and payouts.                              |
+| "Where are we?"           | Agency has the full dashboard. Brands get a magic-link status page per campaign. Influencers get a magic-link page per invitation.                              |
+
+### Why this shape
+
+Three full apps (agency + brand + influencer) means three times the surface area, three onboarding flows, and slower time-to-first-paying-customer. The agency is the buyer — that app is rich. Brands and influencers are touchpoints, not users to acquire. Magic-link portals keep their experience friction-free and the build focused.
 
 ---
 
@@ -85,17 +89,18 @@ Every step is recorded in the audit log. No DM screenshots needed.
 
 ### For the brand
 
-- Read-only visibility into the campaigns you commissioned.
-- Approve briefs and content in the same place.
-- Spend reports update themselves.
-- No more "send me a status please" emails.
+- A magic-link email per campaign — no signup, no password.
+- See the brief, deliverables, and current status on one page.
+- Approve content with one click; comments go straight to the audit log.
+- Spend stays visible without anyone having to "send a status".
 
 ### For the influencer
 
-- Invitations show the deal in plain numbers before they accept.
+- A magic-link email per invitation — no signup, no password.
+- The offer is in plain numbers (amount, deliverables, deadlines) before they accept.
 - Contracts signed on their phone via Aadhaar in minutes.
-- Submit content via URL. Get feedback in one place.
-- See exactly when each payout is coming and why.
+- Submit content by pasting a URL on the same page. Feedback shows up there.
+- Payout status updates live on that same page.
 
 ---
 
@@ -109,25 +114,26 @@ Every step is recorded in the audit log. No DM screenshots needed.
 
 ---
 
-## Status (what you can use today)
+## Scope — v1 is agency-only
 
-**Live now**
+To ship something real, v1 builds **one app: the agency app.** Brands and influencers interact only through magic-link emails. No separate portals to build, no separate logins, no separate support load.
 
-- Magic-link login (no passwords) for all three personas.
+**v1 (live or in progress)**
+
+- Agency login (magic link, no passwords).
 - Campaign creation, influencer roster, structured invitations.
 - Auto-generated contracts on invitation acceptance.
 - Deliverable tracking: submit → review → approve / request changes → live.
 - Full audit log on every state change.
-- Leegality e-sign integration ready.
-- Razorpay payout webhook ready.
+- Leegality e-sign integration.
+- Razorpay payout webhook.
+- Magic-link pages for brands (approve briefs/content) and influencers (accept invitations, sign, submit deliverables).
 
-**Coming next**
+**Deferred to v2 (after first paying agency)**
 
-- Agency, brand, and influencer dashboards (status at a glance).
-- Brand portal: brand-side approvals and spend view.
-- Razorpay payout automation end-to-end.
-- Email notifications via Resend (invitations, signing reminders, payout confirmations).
-- Brand creation UI for agencies (currently provisioned by support).
+- Standalone brand portal — cross-campaign visibility, brand-side dashboard.
+- Standalone influencer portal — cross-invitation history, payout dashboard.
+- Multi-user brand teams (right now, brand magic-links are per-recipient).
 
 For a step-by-step demo of the live flows see
 [`ARCHITECTURE.md` § 8 — Testing the flow end-to-end](./ARCHITECTURE.md#8-testing-the-flow-end-to-end).

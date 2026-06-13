@@ -14,11 +14,15 @@ they'll get paid.
 
 ## Personas
 
-| Persona        | Pays?  | Primary jobs                                                      |
-|----------------|--------|-------------------------------------------------------------------|
-| **Agency**     | Yes    | Create campaigns, invite influencers, manage contracts & payouts  |
-| **Brand**      | No     | Approve briefs and content, view spend                            |
-| **Influencer** | No     | Accept invitations, sign contracts, submit deliverables, get paid |
+v1 ships **one app — the agency app**. Brands and influencers interact via
+tokenised magic-link pages emailed to them per campaign / invitation. Standalone
+brand and influencer portals are deferred to v2.
+
+| Persona        | Pays?  | Primary jobs                                                      | v1 surface              |
+|----------------|--------|-------------------------------------------------------------------|-------------------------|
+| **Agency**     | Yes    | Create campaigns, invite influencers, manage contracts & payouts  | Full app + dashboard    |
+| **Brand**      | No     | Approve briefs and content, view spend                            | Magic-link per campaign |
+| **Influencer** | No     | Accept invitations, sign contracts, submit deliverables, get paid | Magic-link per invitation |
 
 ## Tech stack
 
@@ -86,12 +90,16 @@ Every state-changing server action also writes to `audit_log` for transparency.
 - Razorpay webhook with signature verification
 - Audit log writes across the flows
 
-**Partial / not yet built**
+**Partial / not yet built (v1 scope)**
+- Magic-link pages for brand + influencer touchpoints (replaces standalone portals)
 - Razorpay webhook event handling and payout initiation
-- Brand portal pages beyond scaffolding
-- Persona dashboards (`/agency`, `/brand`, `/influencer`) are still stubs
+- Agency dashboard (`/agency`) is still a stub
 - Brand creation UI for agencies (currently SQL-only)
 - Resend integration (no emails sent yet)
+
+**Deferred to v2**
+- Standalone brand portal (`/brand/*`) and influencer portal (`/influencer/*`)
+- Multi-user brand teams via `brand_members` invites
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md#6-status--whats-done--whats-left)
 for the full breakdown and a step-by-step test plan.

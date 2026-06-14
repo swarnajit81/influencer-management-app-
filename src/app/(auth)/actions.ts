@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/auth/getCurrentUser";
 import { sendEmail } from "@/lib/email/resend";
 import { buildInvitationEmail } from "@/lib/email/templates/invitation";
+import { buildContractLinkEmail } from "@/lib/email/templates/contract-link";
 import { signToken } from "@/lib/tokens";
 
 function appUrl(path: string): string {
@@ -61,6 +62,42 @@ export async function logOutAction() {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   redirect("/");
+}
+
+export async function createBrandAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const contactEmail = String(formData.get("contact_email") ?? "").trim().toLowerCase();
+  const contactPhone = String(formData.get("contact_phone") ?? "").trim() || null;
+  const gstin = String(formData.get("gstin") ?? "").trim().toUpperCase() || null;
+  const pan = String(formData.get("pan") ?? "").trim().toUpperCase() || null;
+  const billingAddress = String(formData.get("billing_address") ?? "").trim() || null;
+
+  if (!name || !contactEmail) {
+    redirect("/agency/brands?error=invalid_input");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("brands").insert({
+    agency_id: user.agencyId,
+    name,
+    contact_email: contactEmail,
+    contact_phone: contactPhone,
+    gstin,
+    pan,
+    billing_address: billingAddress,
+  });
+
+  if (error) {
+    redirect(`/agency/brands?error=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect(`/agency/brands?created=${encodeURIComponent(name)}`);
 }
 
 export async function createCampaignAction(formData: FormData) {
@@ -468,7 +505,79 @@ export async function reviewDeliverableAction(formData: FormData) {
     metadata: { feedback },
   });
 
+  if (nextStatus === "changes_requested") {
+    await sendChangesRequestedEmail({
+      contractId,
+      actorProfileId: user.id,
+      feedback,
+    });
+  }
+
   redirect(`/agency/contracts/${contractId}?reviewed=1`);
+}
+
+async function sendChangesRequestedEmail(params: {
+  contractId: string;
+  actorProfileId: string;
+  feedback: string | null;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  const { data: contract } = await admin
+    .from("contracts")
+    .select(
+      `id,
+       campaigns!inner ( name, agencies ( name ), brands ( name ) ),
+       influencers!inner ( display_name, profiles ( email, full_name ) )`,
+    )
+    .eq("id", params.contractId)
+    .single();
+
+  if (!contract) return;
+
+  const row = contract as any;
+  const campaign = Array.isArray(row.campaigns) ? row.campaigns[0] : row.campaigns;
+  const agency = Array.isArray(campaign?.agencies) ? campaign.agencies[0] : campaign?.agencies;
+  const brand = Array.isArray(campaign?.brands) ? campaign.brands[0] : campaign?.brands;
+  const influencer = Array.isArray(row.influencers) ? row.influencers[0] : row.influencers;
+  const profile = Array.isArray(influencer?.profiles)
+    ? influencer.profiles[0]
+    : influencer?.profiles;
+
+  if (!profile?.email) return;
+
+  const contractToken = signToken({ kind: "contract", contractId: params.contractId });
+  const { subject, html, text } = buildContractLinkEmail({
+    context: "changes_requested",
+    influencerName: influencer?.display_name ?? profile.full_name ?? "there",
+    agencyName: agency?.name ?? "the agency",
+    brandName: brand?.name ?? "the brand",
+    campaignName: campaign?.name ?? "the campaign",
+    contractUrl: appUrl(`/p/contract/${contractToken}`),
+    feedback: params.feedback,
+  });
+
+  const result = await sendEmail({
+    to: profile.email,
+    subject,
+    html,
+    text,
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: params.actorProfileId,
+    entity_type: "contract",
+    entity_id: params.contractId,
+    action: result.ok ? "contract_link_email_sent" : "contract_link_email_failed",
+    metadata: result.ok
+      ? { provider: "resend", email_id: result.id, context: "changes_requested" }
+      : {
+          provider: "resend",
+          reason: result.reason,
+          error: result.message,
+          context: "changes_requested",
+        },
+  });
 }
 
 export async function markDeliverableLiveAction(formData: FormData) {

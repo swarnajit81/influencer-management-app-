@@ -184,8 +184,9 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 - Agency: influencer roster — add by email.
 - Agency: contract detail — add deliverable, review submission (approve / request changes / mark live).
 - Invitation email via Resend (sent from `inviteInfluencerAction`, audit-logged on success and failure).
-- HMAC-signed magic-link tokens (`src/lib/tokens/`) with 30-day TTL.
+- HMAC-signed magic-link tokens (`src/lib/tokens/`) with 30-day TTL. Token kinds: `invitation`, `contract`.
 - Public invitation page `/p/invitation/[token]` — view offer, accept (auto-creates contract, click-to-sign), or decline. No login required.
+- Public contract page `/p/contract/[token]` — view contract terms + deliverable list, submit / resubmit each deliverable. Issued at accept-time and threaded into the accept confirmation screen.
 - Audit log writes on every state-changing action.
 - Leegality webhook: HMAC verified, parses all signed_status events, updates contract status, fetches signed PDF URL.
 - Razorpay webhook endpoint exists with signature verification.
@@ -194,13 +195,12 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 
 - **Razorpay webhook** (`src/app/api/webhooks/razorpay/route.ts`) — signature verified, **event parsing + payout status update TODO**.
 - **Agency / brands page** — read-only list. "New brand" button disabled. Brand creation must be done via SQL.
-- **Deliverable submission via magic link** — accept flow creates the contract, but the public page does not yet expose deliverable submission. Influencers who accept currently have no way to submit content; that needs `/p/contract/[token]` (next).
+- **Contract-link email follow-up** — after accept, the contract link only appears on the in-browser confirmation screen. No email is sent yet, so influencers who close the tab need to ask the agency for a new link. Resend wiring on accept is the next small follow-up.
 
 ### Not started (v1)
 
 - Agency dashboard (`/agency`) — stub.
 - Agency payouts queue (`/agency/payouts`).
-- Public **contract page** (`/p/contract/[token]`) — view deliverables, submit / resubmit content, see review feedback.
 - Public **brand campaign page** (`/p/campaign/[token]`) — brand-side approvals + spend view.
 - Leegality e-sign integration inside the accept flow (currently click-to-sign with `esign_skipped: true` audit metadata).
 - Razorpay Contact + Fund Account creation on influencer onboarding.
@@ -223,8 +223,9 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 | `/agency/influencers` | Built |
 | `/agency/brands` | Read-only stub |
 | `/agency/payouts` | Stub |
-| `/p/invitation/[token]` | Built (accept/decline; no deliverable submission yet) |
-| `/p/contract/[token]`, `/p/campaign/[token]` | Missing (v1 next) |
+| `/p/invitation/[token]` | Built (accept/decline) |
+| `/p/contract/[token]` | Built (deliverable submit / resubmit) |
+| `/p/campaign/[token]` | Missing (v1 next) |
 | `POST /api/webhooks/razorpay` | Partial (signature only) |
 | `POST /api/webhooks/leegality` | Built |
 
@@ -308,11 +309,13 @@ returning id;
 | 3 | Agency: campaign detail → invite influencer (offer + message) | Pending invitation row; Resend email fires |
 | 4 | Influencer inbox | Email arrives; "Review invitation" link contains a signed token |
 | 5 | Click link | `/p/invitation/[token]` renders the offer with Accept and Decline buttons |
-| 6 | Click **Accept &amp; sign** | Page shows "You accepted the invitation". Contract row created with `status=signed_by_influencer`. Audit row `invitation_accepted_click_to_sign_via_token` |
+| 6 | Click **Accept &amp; sign** | Page shows "You accepted the invitation" plus a "Continue → review & submit deliverables" button. Contract row created with `status=signed_by_influencer`. Audit row `invitation_accepted_click_to_sign_via_token` |
 | 7 | Agency: refresh `/agency/contracts/[id]` → add deliverable | Deliverable status `pending` |
-| 8 | `audit_log` | `invitation_email_sent`, `invitation_accepted_click_to_sign_via_token`, deliverable insert |
-
-Deliverable submission via magic link is not yet built — that needs `/p/contract/[token]`.
+| 8 | Influencer: click **Continue → review & submit deliverables** | `/p/contract/[token]` renders with the deliverable card and a submit form |
+| 9 | Submit content URL + caption | Banner "Submission received". Deliverable flips to `submitted`. `deliverable_submissions` row inserted. Audit row `submitted_via_token` |
+| 10 | Agency: refresh contract page → **Request changes** + feedback | Deliverable flips to `changes_requested` |
+| 11 | Influencer: refresh contract page → form re-appears with **Resubmit** | New `deliverable_submissions` row, status back to `submitted` |
+| 12 | Agency: **Approve** → **Mark live** | Deliverable status reaches `live` |
 
 ### 8.5 Verify in Supabase SQL editor
 
@@ -352,7 +355,7 @@ v1 is **agency app + magic-link touchpoints for brand and influencer**. The `/br
 
 Smallest useful PRs in rough priority order:
 
-1. Build the public **contract page** (`/p/contract/[token]`) — list deliverables, accept submission URL + caption, show review feedback. Token issued at invitation-accept time, emailed to the influencer.
+1. Send the **contract link by email** on accept and again on `changes_requested`. Small follow-up — template + Resend call, similar shape to the invitation email.
 2. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
 3. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
 4. Build the public **brand campaign page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.

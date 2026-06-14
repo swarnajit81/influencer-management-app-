@@ -3,7 +3,7 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { verifyToken } from "@/lib/tokens";
+import { verifyToken, signToken } from "@/lib/tokens";
 import { buildContractHtml } from "@/lib/contracts/generate";
 
 type InvitationContext = {
@@ -150,7 +150,12 @@ export async function acceptInvitationViaTokenAction(formData: FormData) {
     metadata: { invitation_id: ctx.invitationId, esign_skipped: true },
   });
 
-  redirect(`/p/invitation/${encodeURIComponent(token)}?accepted=1`);
+  const contractToken = signToken({ kind: "contract", contractId: contract.id });
+  redirect(
+    `/p/invitation/${encodeURIComponent(token)}?accepted=1&contract=${encodeURIComponent(
+      contractToken,
+    )}`,
+  );
 }
 
 export async function declineInvitationViaTokenAction(formData: FormData) {

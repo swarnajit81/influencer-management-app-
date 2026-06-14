@@ -9,12 +9,17 @@ import {
 
 type PageProps = {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ accepted?: string; declined?: string; error?: string }>;
+  searchParams: Promise<{
+    accepted?: string;
+    declined?: string;
+    error?: string;
+    contract?: string;
+  }>;
 };
 
 export default async function InvitationPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { accepted, declined, error } = await searchParams;
+  const { accepted, declined, error, contract: contractToken } = await searchParams;
 
   const verified = verifyToken(token);
   if (!verified.ok) {
@@ -64,9 +69,19 @@ export default async function InvitationPage({ params, searchParams }: PageProps
           campaignName={campaign?.name}
           offer={offer}
         />
-        <p className="mt-6 text-sm text-zinc-500">
-          We&apos;ll email you next steps for signing the contract and submitting deliverables.
-        </p>
+        {contractToken && (
+          <div className="mt-6">
+            <a
+              href={`/p/contract/${contractToken}`}
+              className="inline-block rounded-md bg-zinc-900 px-4 py-3 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Continue → review &amp; submit deliverables
+            </a>
+            <p className="mt-2 text-xs text-zinc-500">
+              You can also reach this page from the contract email we&apos;ll send shortly.
+            </p>
+          </div>
+        )}
       </Shell>
     );
   }

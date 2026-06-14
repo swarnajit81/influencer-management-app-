@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type TokenPayload =
   | { kind: "invitation"; invitationId: string; exp: number }
-  | { kind: "contract"; contractId: string; exp: number };
+  | { kind: "contract"; contractId: string; exp: number }
+  | { kind: "campaign"; campaignId: string; exp: number };
 
 export type VerifyResult =
   | { ok: true; payload: TokenPayload }
@@ -29,7 +30,8 @@ function sign(body: string, key: string): string {
 
 type UnsignedPayload =
   | { kind: "invitation"; invitationId: string }
-  | { kind: "contract"; contractId: string };
+  | { kind: "contract"; contractId: string }
+  | { kind: "campaign"; campaignId: string };
 
 export function signToken(
   payload: UnsignedPayload,

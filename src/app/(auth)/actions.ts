@@ -7,8 +7,10 @@ import type { UserRole } from "@/lib/auth/getCurrentUser";
 import { sendEmail } from "@/lib/email/resend";
 import { buildInvitationEmail } from "@/lib/email/templates/invitation";
 import { buildContractLinkEmail } from "@/lib/email/templates/contract-link";
+import { buildBrandCampaignEmail } from "@/lib/email/templates/brand-campaign";
 import { signToken } from "@/lib/tokens";
 import { createInfluencerPayout } from "@/lib/razorpay/payouts";
+import { formatPaiseAsINR } from "@/lib/money";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -153,7 +155,74 @@ export async function createCampaignAction(formData: FormData) {
     redirect(`/agency/campaigns?error=${encodeURIComponent(error.message)}`);
   }
 
+  await sendBrandCampaignEmail({
+    campaignId: campaign.id,
+    actorProfileId: user.id,
+    agencyId: user.agencyId,
+    budgetPaise: Math.round(budgetRupees * 100),
+  });
+
   redirect(`/agency/campaigns/${campaign.id}`);
+}
+
+async function sendBrandCampaignEmail(params: {
+  campaignId: string;
+  actorProfileId: string;
+  agencyId: string;
+  budgetPaise: number;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  const { data: ctx } = await admin
+    .from("campaigns")
+    .select(
+      `id, name,
+       brands!inner ( name, contact_email )`,
+    )
+    .eq("id", params.campaignId)
+    .single();
+
+  const { data: agency } = await admin
+    .from("agencies")
+    .select("name")
+    .eq("id", params.agencyId)
+    .single();
+
+  if (!ctx || !agency) return;
+
+  const row = ctx as unknown as {
+    id: string;
+    name: string;
+    brands: { name: string; contact_email: string } | { name: string; contact_email: string }[];
+  };
+  const brand = Array.isArray(row.brands) ? row.brands[0] : row.brands;
+  if (!brand?.contact_email) return;
+
+  const campaignToken = signToken({ kind: "campaign", campaignId: params.campaignId });
+  const { subject, html, text } = buildBrandCampaignEmail({
+    brandName: brand.name,
+    agencyName: (agency as { name: string }).name,
+    campaignName: row.name,
+    campaignUrl: appUrl(`/p/campaign/${campaignToken}`),
+    budgetInr: formatPaiseAsINR(params.budgetPaise),
+  });
+
+  const result = await sendEmail({
+    to: brand.contact_email,
+    subject,
+    html,
+    text,
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: params.actorProfileId,
+    entity_type: "campaign",
+    entity_id: params.campaignId,
+    action: result.ok ? "brand_campaign_email_sent" : "brand_campaign_email_failed",
+    metadata: result.ok
+      ? { provider: "resend", email_id: result.id, to: brand.contact_email }
+      : { provider: "resend", reason: result.reason, error: result.message },
+  });
 }
 
 export async function inviteInfluencerAction(formData: FormData) {

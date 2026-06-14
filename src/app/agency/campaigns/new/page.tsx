@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/getCurrentUser";
+import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { createCampaignAction } from "@/app/(auth)/actions";
 
 export default async function NewCampaignPage() {
-  const user = await requireRole("agency_member");
+  const user = await requireAgencyMember();
 
   const supabase = await createSupabaseServerClient();
   const { data: brands } = await supabase

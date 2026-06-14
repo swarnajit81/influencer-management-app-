@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/getCurrentUser";
+import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { addInfluencerToRosterAction } from "@/app/(auth)/actions";
 
 export default async function AgencyInfluencers({
@@ -9,7 +9,7 @@ export default async function AgencyInfluencers({
   searchParams: Promise<{ error?: string; added?: string }>;
 }) {
   const { error, added } = await searchParams;
-  const user = await requireRole("agency_member");
+  const user = await requireAgencyMember();
 
   const supabase = await createSupabaseServerClient();
   const { data: roster } = await supabase

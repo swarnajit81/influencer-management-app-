@@ -1,8 +1,8 @@
 import { PersonaShell } from "@/components/PersonaShell";
-import { requireRole } from "@/lib/auth/getCurrentUser";
+import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 
 export default async function AgencyLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireRole("agency_member");
+  const user = await requireAgencyMember();
   return (
     <PersonaShell
       persona="Agency"

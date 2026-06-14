@@ -3,7 +3,6 @@ import { signUpAction } from "../actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_input: "Please fill in all required fields.",
-  agency_name_required: "Agency name is required when signing up as an agency.",
 };
 
 export default async function SignupPage({
@@ -16,13 +15,14 @@ export default async function SignupPage({
 
   return (
     <div className="mx-auto max-w-md px-6 py-16">
-      <h1 className="text-2xl font-semibold">Create your account</h1>
+      <h1 className="text-2xl font-semibold">Create your agency account</h1>
       <p className="mt-2 text-sm text-zinc-500">
-        We'll email you a magic link &mdash; no password needed.
+        Built for PR agencies running influencer campaigns. We&apos;ll email you a
+        magic link &mdash; no password needed.
       </p>
 
       <form action={signUpAction} className="mt-8 space-y-4">
-        <Field label="Full name">
+        <Field label="Your name">
           <input
             name="full_name"
             type="text"
@@ -32,7 +32,7 @@ export default async function SignupPage({
           />
         </Field>
 
-        <Field label="Email">
+        <Field label="Work email">
           <input
             name="email"
             type="email"
@@ -42,20 +42,13 @@ export default async function SignupPage({
           />
         </Field>
 
-        <Field label="I am a">
-          <select name="role" required defaultValue="agency_member" className="input">
-            <option value="agency_member">PR Agency</option>
-            <option value="brand_member">Brand</option>
-            <option value="influencer">Influencer / Creator</option>
-          </select>
-          <p className="mt-1 text-xs text-zinc-500">
-            Brands are typically invited by their agency &mdash; signing up directly
-            requires an invite link in v1.
-          </p>
-        </Field>
-
-        <Field label="Agency name (Agencies only)">
-          <input name="agency_name" type="text" className="input" />
+        <Field label="Agency name">
+          <input
+            name="agency_name"
+            type="text"
+            required
+            className="input"
+          />
         </Field>
 
         {message && (

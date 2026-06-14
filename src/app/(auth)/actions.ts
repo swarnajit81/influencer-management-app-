@@ -4,9 +4,8 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/auth/getCurrentUser";
-import { buildContractHtml } from "@/lib/contracts/generate";
-
-const ROLES: readonly UserRole[] = ["agency_member", "brand_member", "influencer"];
+import { sendEmail } from "@/lib/email/resend";
+import { buildInvitationEmail } from "@/lib/email/templates/invitation";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -16,14 +15,10 @@ function appUrl(path: string): string {
 export async function signUpAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const fullName = String(formData.get("full_name") ?? "").trim();
-  const role = String(formData.get("role") ?? "") as UserRole;
-  const agencyName = String(formData.get("agency_name") ?? "").trim() || null;
+  const agencyName = String(formData.get("agency_name") ?? "").trim();
 
-  if (!email || !fullName || !ROLES.includes(role)) {
+  if (!email || !fullName || !agencyName) {
     redirect("/signup?error=invalid_input");
-  }
-  if (role === "agency_member" && !agencyName) {
-    redirect("/signup?error=agency_name_required");
   }
 
   const supabase = await createSupabaseServerClient();
@@ -34,8 +29,8 @@ export async function signUpAction(formData: FormData) {
       emailRedirectTo: appUrl("/auth/callback"),
       data: {
         full_name: fullName,
-        role,
-        ...(agencyName ? { agency_name: agencyName } : {}),
+        role: "agency_member" satisfies UserRole,
+        agency_name: agencyName,
       },
     },
   });
@@ -166,12 +161,14 @@ export async function inviteInfluencerAction(formData: FormData) {
     );
   }
 
+  const offerAmountPaise = Math.round(offerAmount * 100);
+
   const { data: invitation, error } = await supabase
     .from("campaign_invitations")
     .insert({
       campaign_id: campaignId,
       influencer_id: influencerId,
-      offer_amount_inr_paise: Math.round(offerAmount * 100),
+      offer_amount_inr_paise: offerAmountPaise,
       offer_message: offerMessage,
       status: "pending",
     })
@@ -184,7 +181,90 @@ export async function inviteInfluencerAction(formData: FormData) {
     );
   }
 
+  await sendInvitationEmail({
+    actorProfileId: user.id,
+    invitationId: invitation.id,
+    campaignId,
+    influencerId,
+    agencyId: user.agencyId,
+    offerAmountPaise,
+    offerMessage,
+  });
+
   redirect(`/agency/campaigns/${campaignId}?invited=${influencerId}`);
+}
+
+async function sendInvitationEmail(params: {
+  actorProfileId: string;
+  invitationId: string;
+  campaignId: string;
+  influencerId: string;
+  agencyId: string;
+  offerAmountPaise: number;
+  offerMessage: string | null;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  const { data: ctx, error: ctxError } = await admin
+    .from("campaign_invitations")
+    .select(
+      `id,
+       campaign:campaigns!inner(name, brand:brands!inner(name)),
+       influencer:influencers!inner(profile:profiles!inner(email, full_name))`,
+    )
+    .eq("id", params.invitationId)
+    .single<{
+      id: string;
+      campaign: { name: string; brand: { name: string } };
+      influencer: { profile: { email: string; full_name: string | null } };
+    }>();
+
+  const { data: agency } = await admin
+    .from("agencies")
+    .select("name")
+    .eq("id", params.agencyId)
+    .single<{ name: string }>();
+
+  if (ctxError || !ctx || !agency) {
+    await admin.from("audit_log").insert({
+      actor_profile_id: params.actorProfileId,
+      entity_type: "campaign_invitation",
+      entity_id: params.invitationId,
+      action: "invitation_email_failed",
+      metadata: {
+        reason: "enrichment_failed",
+        error: ctxError?.message ?? "missing_data",
+      },
+    });
+    return;
+  }
+
+  const { subject, html, text } = buildInvitationEmail({
+    influencerName: ctx.influencer.profile.full_name ?? "there",
+    agencyName: agency.name,
+    brandName: ctx.campaign.brand.name,
+    campaignName: ctx.campaign.name,
+    offerAmountPaise: params.offerAmountPaise,
+    offerMessage: params.offerMessage,
+    invitationUrl: appUrl(`/p/invitation/${params.invitationId}`),
+  });
+
+  const result = await sendEmail({
+    to: ctx.influencer.profile.email,
+    subject,
+    html,
+    text,
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: params.actorProfileId,
+    entity_type: "campaign_invitation",
+    entity_id: params.invitationId,
+    action: result.ok ? "invitation_email_sent" : "invitation_email_failed",
+    metadata: result.ok
+      ? { provider: "resend", email_id: result.id, to: ctx.influencer.profile.email }
+      : { provider: "resend", reason: result.reason, error: result.message },
+  });
 }
 
 export async function addInfluencerToRosterAction(formData: FormData) {
@@ -249,150 +329,7 @@ export async function addInfluencerToRosterAction(formData: FormData) {
 }
 
 // -----------------------------------------------------------------
-// Influencer flow: accept / decline an invitation, sign a contract
-// -----------------------------------------------------------------
-
-export async function acceptInvitationAction(formData: FormData) {
-  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
-  const user = await getCurrentUser();
-  if (!user || user.role !== "influencer" || !user.influencerId) {
-    redirect("/login");
-  }
-
-  const invitationId = String(formData.get("invitation_id") ?? "").trim();
-  if (!invitationId) redirect("/influencer/invitations?error=invalid_input");
-
-  const supabase = await createSupabaseServerClient();
-  const admin = createSupabaseAdminClient();
-
-  // RLS-scoped fetch: influencer can only read own invitations.
-  const { data: inv } = await supabase
-    .from("campaign_invitations")
-    .select(
-      `
-      id, status, offer_amount_inr_paise, offer_message, deliverables_summary,
-      campaign_id, influencer_id,
-      campaigns!inner ( id, name, start_date, end_date, agency_id, brand_id,
-                        agencies ( name ), brands ( name ) ),
-      influencers!inner ( id, display_name, profile_id,
-                          profiles ( email, full_name ) )
-    `,
-    )
-    .eq("id", invitationId)
-    .eq("influencer_id", user.influencerId)
-    .single();
-
-  if (!inv) redirect("/influencer/invitations?error=not_found");
-  if (inv.status !== "pending") {
-    redirect(`/influencer/invitations?error=already_${inv.status}`);
-  }
-
-  const campaign: any = Array.isArray(inv.campaigns) ? inv.campaigns[0] : inv.campaigns;
-  const influencer: any = Array.isArray(inv.influencers)
-    ? inv.influencers[0]
-    : inv.influencers;
-  const agency: any = Array.isArray(campaign?.agencies)
-    ? campaign.agencies[0]
-    : campaign?.agencies;
-  const brand: any = Array.isArray(campaign?.brands) ? campaign.brands[0] : campaign?.brands;
-  const profile: any = Array.isArray(influencer?.profiles)
-    ? influencer.profiles[0]
-    : influencer?.profiles;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const html = buildContractHtml({
-    campaignName: campaign?.name ?? "Campaign",
-    brandName: brand?.name ?? "Brand",
-    agencyName: agency?.name ?? "Agency",
-    influencerName: influencer?.display_name ?? profile?.full_name ?? "Influencer",
-    influencerEmail: profile?.email ?? user.email,
-    totalAmountInrPaise: inv.offer_amount_inr_paise,
-    paymentTerms: "on_completion",
-    deliverablesSummary: inv.deliverables_summary,
-    offerMessage: inv.offer_message,
-    startDate: campaign?.start_date ?? null,
-    endDate: campaign?.end_date ?? null,
-    effectiveDate: today,
-  });
-
-  // Mark invitation accepted (RLS: influencers_influencer_update OK).
-  await supabase
-    .from("campaign_invitations")
-    .update({ status: "accepted", responded_at: new Date().toISOString() })
-    .eq("id", invitationId);
-
-  // Click-to-accept: e-sign skipped for now. Treat click as influencer signature.
-  const nowIso = new Date().toISOString();
-  const { data: contract, error: contractErr } = await admin
-    .from("contracts")
-    .insert({
-      invitation_id: invitationId,
-      campaign_id: inv.campaign_id,
-      influencer_id: inv.influencer_id,
-      total_amount_inr_paise: inv.offer_amount_inr_paise,
-      payment_terms: "on_completion",
-      contract_html: html,
-      status: "signed_by_influencer",
-      influencer_signed_at: nowIso,
-    })
-    .select("id")
-    .single();
-
-  if (contractErr || !contract) {
-    redirect(
-      `/influencer/invitations?error=${encodeURIComponent(
-        contractErr?.message ?? "contract_create_failed",
-      )}`,
-    );
-  }
-
-  await admin.from("audit_log").insert({
-    actor_profile_id: user.id,
-    entity_type: "contract",
-    entity_id: contract.id,
-    action: "invitation_accepted_click_to_sign",
-    metadata: { invitation_id: invitationId, esign_skipped: true },
-  });
-
-  redirect(`/influencer/contracts?contract=${contract.id}`);
-}
-
-export async function declineInvitationAction(formData: FormData) {
-  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
-  const user = await getCurrentUser();
-  if (!user || user.role !== "influencer" || !user.influencerId) {
-    redirect("/login");
-  }
-
-  const invitationId = String(formData.get("invitation_id") ?? "").trim();
-  if (!invitationId) redirect("/influencer/invitations?error=invalid_input");
-
-  const supabase = await createSupabaseServerClient();
-
-  const { error } = await supabase
-    .from("campaign_invitations")
-    .update({ status: "declined", responded_at: new Date().toISOString() })
-    .eq("id", invitationId)
-    .eq("influencer_id", user.influencerId);
-
-  if (error) {
-    redirect(`/influencer/invitations?error=${encodeURIComponent(error.message)}`);
-  }
-
-  const admin = createSupabaseAdminClient();
-  await admin.from("audit_log").insert({
-    actor_profile_id: user.id,
-    entity_type: "campaign_invitation",
-    entity_id: invitationId,
-    action: "declined",
-    metadata: {},
-  });
-
-  redirect("/influencer/invitations?declined=1");
-}
-
-// -----------------------------------------------------------------
-// Deliverables flow
+// Deliverable management (agency-side)
 // -----------------------------------------------------------------
 
 const DELIVERABLE_TYPES = [
@@ -455,73 +392,6 @@ export async function addDeliverableAction(formData: FormData) {
   }
 
   redirect(`/agency/contracts/${contractId}?added=1`);
-}
-
-export async function submitDeliverableAction(formData: FormData) {
-  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
-  const user = await getCurrentUser();
-  if (!user || user.role !== "influencer" || !user.influencerId) {
-    redirect("/login");
-  }
-
-  const deliverableId = String(formData.get("deliverable_id") ?? "").trim();
-  const contractId = String(formData.get("contract_id") ?? "").trim();
-  const contentUrl = String(formData.get("content_url") ?? "").trim() || null;
-  const caption = String(formData.get("caption") ?? "").trim() || null;
-  const notes = String(formData.get("notes") ?? "").trim() || null;
-
-  if (!deliverableId || !contentUrl) {
-    redirect(`/influencer/contracts/${contractId}?error=invalid_input`);
-  }
-
-  const supabase = await createSupabaseServerClient();
-
-  // RLS-scoped: deliverable must belong to influencer's contract
-  const { data: deliverable } = await supabase
-    .from("deliverables")
-    .select("id, contract_id, status, contracts!inner ( influencer_id )")
-    .eq("id", deliverableId)
-    .single();
-
-  const ct: any = Array.isArray((deliverable as any)?.contracts)
-    ? (deliverable as any).contracts[0]
-    : (deliverable as any)?.contracts;
-  if (!deliverable || ct?.influencer_id !== user.influencerId) {
-    redirect(`/influencer/contracts/${contractId}?error=not_found`);
-  }
-  if (!["pending", "changes_requested"].includes((deliverable as any).status)) {
-    redirect(`/influencer/contracts/${contractId}?error=invalid_status`);
-  }
-
-  const { error: subErr } = await supabase.from("deliverable_submissions").insert({
-    deliverable_id: deliverableId,
-    submitted_by: user.id,
-    content_url: contentUrl,
-    caption,
-    notes,
-  });
-  if (subErr) {
-    redirect(
-      `/influencer/contracts/${contractId}?error=${encodeURIComponent(subErr.message)}`,
-    );
-  }
-
-  // Move deliverable to submitted. Agency has FOR ALL policy; influencer needs admin.
-  const admin = createSupabaseAdminClient();
-  await admin
-    .from("deliverables")
-    .update({ status: "submitted", updated_at: new Date().toISOString() })
-    .eq("id", deliverableId);
-
-  await admin.from("audit_log").insert({
-    actor_profile_id: user.id,
-    entity_type: "deliverable",
-    entity_id: deliverableId,
-    action: "submitted",
-    metadata: { content_url: contentUrl },
-  });
-
-  redirect(`/influencer/contracts/${contractId}?submitted=1`);
 }
 
 export async function reviewDeliverableAction(formData: FormData) {

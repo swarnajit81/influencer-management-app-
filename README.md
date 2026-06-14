@@ -98,7 +98,7 @@ Every state-changing server action also writes to `audit_log` for transparency.
 - Resend integration (no emails sent yet)
 
 **Deferred to v2**
-- Standalone brand portal (`/brand/*`) and influencer portal (`/influencer/*`)
+- Standalone brand and influencer portal apps (the `/brand/*` and `/influencer/*` route trees were removed in the v1 scope cut)
 - Multi-user brand teams via `brand_members` invites
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md#6-status--whats-done--whats-left)

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { dashboardPathFor, type UserRole } from "@/lib/auth/getCurrentUser";
+import { AGENCY_DASHBOARD_PATH } from "@/lib/auth/getCurrentUser";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(explicitNext, url.origin));
   }
 
+  // v1: app only signs up agency_member. Non-agency accounts (if any exist
+  // from prior signups) get bounced to login with an explicit message — they
+  // belong on the magic-link surface, not the app.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -36,6 +39,10 @@ export async function GET(request: NextRequest) {
     .eq("id", user.id)
     .single();
 
-  const role = (profile?.primary_role as UserRole | undefined) ?? "influencer";
-  return NextResponse.redirect(new URL(dashboardPathFor(role), url.origin));
+  if (profile?.primary_role !== "agency_member") {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(new URL("/login?error=agency_only", url.origin));
+  }
+
+  return NextResponse.redirect(new URL(AGENCY_DASHBOARD_PATH, url.origin));
 }

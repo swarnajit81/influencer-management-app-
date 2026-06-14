@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+// v1 ships agency-only. brand_member and influencer remain in the DB enum
+// (handle_new_user still references them, magic-link flows will use them)
+// but the app UI signs up and routes only agency_member users.
 export type UserRole = "agency_member" | "brand_member" | "influencer";
+
+export const AGENCY_DASHBOARD_PATH = "/agency";
 
 export type CurrentUser = {
   id: string;
@@ -9,8 +14,6 @@ export type CurrentUser = {
   fullName: string;
   role: UserRole;
   agencyId: string | null;
-  brandId: string | null;
-  influencerId: string | null;
 };
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -27,20 +30,18 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     .single();
   if (!profile) return null;
 
-  const [agencyRes, brandRes, influencerRes] = await Promise.all([
-    supabase.from("agency_members").select("agency_id").eq("profile_id", user.id).maybeSingle(),
-    supabase.from("brand_members").select("brand_id").eq("profile_id", user.id).maybeSingle(),
-    supabase.from("influencers").select("id").eq("profile_id", user.id).maybeSingle(),
-  ]);
+  const { data: agency } = await supabase
+    .from("agency_members")
+    .select("agency_id")
+    .eq("profile_id", user.id)
+    .maybeSingle();
 
   return {
     id: profile.id,
     email: profile.email,
     fullName: profile.full_name,
     role: profile.primary_role as UserRole,
-    agencyId: agencyRes.data?.agency_id ?? null,
-    brandId: brandRes.data?.brand_id ?? null,
-    influencerId: influencerRes.data?.id ?? null,
+    agencyId: agency?.agency_id ?? null,
   };
 }
 
@@ -50,19 +51,10 @@ export async function requireUser(): Promise<CurrentUser> {
   return user;
 }
 
-export function dashboardPathFor(role: UserRole): string {
-  switch (role) {
-    case "agency_member":
-      return "/agency";
-    case "brand_member":
-      return "/brand";
-    case "influencer":
-      return "/influencer";
-  }
-}
-
-export async function requireRole(expected: UserRole): Promise<CurrentUser> {
+export async function requireAgencyMember(): Promise<CurrentUser & { agencyId: string }> {
   const user = await requireUser();
-  if (user.role !== expected) redirect(dashboardPathFor(user.role));
-  return user;
+  if (user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login?error=agency_only");
+  }
+  return user as CurrentUser & { agencyId: string };
 }

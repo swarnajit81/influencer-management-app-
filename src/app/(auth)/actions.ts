@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/email/resend";
 import { buildInvitationEmail } from "@/lib/email/templates/invitation";
 import { buildContractLinkEmail } from "@/lib/email/templates/contract-link";
 import { signToken } from "@/lib/tokens";
+import { createInfluencerPayout } from "@/lib/razorpay/payouts";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -622,4 +623,157 @@ export async function markDeliverableLiveAction(formData: FormData) {
   });
 
   redirect(`/agency/contracts/${contractId}?live=1`);
+}
+
+// -----------------------------------------------------------------
+// Influencer detail + payouts
+// -----------------------------------------------------------------
+
+export async function updateInfluencerBankAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const influencerId = String(formData.get("influencer_id") ?? "").trim();
+  const accountNumber = String(formData.get("bank_account_number") ?? "").trim() || null;
+  const ifsc = String(formData.get("bank_ifsc") ?? "").trim().toUpperCase() || null;
+  const holderName = String(formData.get("bank_account_holder_name") ?? "").trim() || null;
+  const pan = String(formData.get("pan") ?? "").trim().toUpperCase() || null;
+  const gstin = String(formData.get("gstin") ?? "").trim().toUpperCase() || null;
+
+  if (!influencerId) redirect("/agency/influencers?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: roster } = await supabase
+    .from("agency_influencer_roster")
+    .select("id")
+    .eq("agency_id", user.agencyId)
+    .eq("influencer_id", influencerId)
+    .single();
+  if (!roster) {
+    redirect(`/agency/influencers?error=not_on_roster`);
+  }
+
+  // Only the agency's roster gate matters; influencer details are mutated via
+  // admin client because RLS scopes influencer writes to the influencer itself.
+  const admin = createSupabaseAdminClient();
+  const updates: Record<string, string | null> = {};
+  if (accountNumber !== null) updates.bank_account_number = accountNumber;
+  if (ifsc !== null) updates.bank_ifsc = ifsc;
+  if (holderName !== null) updates.bank_account_holder_name = holderName;
+  if (pan !== null) updates.pan = pan;
+  if (gstin !== null) updates.gstin = gstin;
+
+  // If bank details changed, the cached Razorpay fund account is stale.
+  if (
+    "bank_account_number" in updates ||
+    "bank_ifsc" in updates ||
+    "bank_account_holder_name" in updates
+  ) {
+    updates.razorpay_fund_account_id = null;
+  }
+
+  const { error } = await admin
+    .from("influencers")
+    .update(updates)
+    .eq("id", influencerId);
+
+  if (error) {
+    redirect(
+      `/agency/influencers/${influencerId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "influencer",
+    entity_id: influencerId,
+    action: "bank_details_updated",
+    metadata: { fields: Object.keys(updates) },
+  });
+
+  redirect(`/agency/influencers/${influencerId}?saved=1`);
+}
+
+export async function initiatePayoutAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const deliverableId = String(formData.get("deliverable_id") ?? "").trim();
+  if (!deliverableId) redirect("/agency/payouts?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: deliverable } = await supabase
+    .from("deliverables")
+    .select(
+      `id, status, amount_inr_paise, contract_id,
+       contracts!inner ( influencer_id, campaigns!inner ( agency_id ) )`,
+    )
+    .eq("id", deliverableId)
+    .single();
+
+  if (!deliverable) redirect(`/agency/payouts?error=not_found`);
+  const row = deliverable as any;
+  const contract = Array.isArray(row.contracts) ? row.contracts[0] : row.contracts;
+  const campaign = Array.isArray(contract?.campaigns)
+    ? contract.campaigns[0]
+    : contract?.campaigns;
+
+  if (campaign?.agency_id !== user.agencyId) {
+    redirect(`/agency/payouts?error=not_yours`);
+  }
+  if (!["approved", "live"].includes(row.status)) {
+    redirect(`/agency/payouts?error=not_payable_${row.status}`);
+  }
+
+  // Already paid out?
+  const admin = createSupabaseAdminClient();
+  const { data: existing } = await admin
+    .from("payouts")
+    .select("id, status")
+    .eq("deliverable_id", deliverableId)
+    .in("status", ["pending", "queued", "processing", "paid"])
+    .limit(1)
+    .maybeSingle();
+  if (existing) {
+    redirect(`/agency/payouts?error=already_initiated`);
+  }
+
+  const result = await createInfluencerPayout({
+    influencerId: contract.influencer_id,
+    contractId: row.contract_id,
+    deliverableId,
+    amountPaise: Number(row.amount_inr_paise),
+    purpose: "payout",
+    narration: "Influencer deliverable payout",
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "deliverable",
+    entity_id: deliverableId,
+    action: result.ok ? "payout_initiated" : "payout_failed",
+    metadata: result.ok
+      ? {
+          payout_id: result.payoutId,
+          razorpay_payout_id: result.razorpayPayoutId,
+          amount_inr_paise: row.amount_inr_paise,
+        }
+      : { reason: result.reason, error: result.message },
+  });
+
+  if (!result.ok) {
+    redirect(
+      `/agency/payouts?error=${encodeURIComponent(result.reason)}${
+        result.message ? `&details=${encodeURIComponent(result.message)}` : ""
+      }`,
+    );
+  }
+
+  redirect(`/agency/payouts?initiated=${result.payoutId}`);
 }

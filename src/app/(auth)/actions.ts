@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/auth/getCurrentUser";
 import { sendEmail } from "@/lib/email/resend";
 import { buildInvitationEmail } from "@/lib/email/templates/invitation";
+import { signToken } from "@/lib/tokens";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -246,7 +247,12 @@ async function sendInvitationEmail(params: {
     campaignName: ctx.campaign.name,
     offerAmountPaise: params.offerAmountPaise,
     offerMessage: params.offerMessage,
-    invitationUrl: appUrl(`/p/invitation/${params.invitationId}`),
+    invitationUrl: appUrl(
+      `/p/invitation/${signToken({
+        kind: "invitation",
+        invitationId: params.invitationId,
+      })}`,
+    ),
   });
 
   const result = await sendEmail({

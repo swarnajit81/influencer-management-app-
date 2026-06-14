@@ -184,6 +184,8 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 - Agency: influencer roster — add by email.
 - Agency: contract detail — add deliverable, review submission (approve / request changes / mark live).
 - Invitation email via Resend (sent from `inviteInfluencerAction`, audit-logged on success and failure).
+- HMAC-signed magic-link tokens (`src/lib/tokens/`) with 30-day TTL.
+- Public invitation page `/p/invitation/[token]` — view offer, accept (auto-creates contract, click-to-sign), or decline. No login required.
 - Audit log writes on every state-changing action.
 - Leegality webhook: HMAC verified, parses all signed_status events, updates contract status, fetches signed PDF URL.
 - Razorpay webhook endpoint exists with signature verification.
@@ -192,16 +194,15 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 
 - **Razorpay webhook** (`src/app/api/webhooks/razorpay/route.ts`) — signature verified, **event parsing + payout status update TODO**.
 - **Agency / brands page** — read-only list. "New brand" button disabled. Brand creation must be done via SQL.
-- **Invitation email link** points to `/p/invitation/[id]` which 404s until the magic-link route ships. Email still sends; click goes nowhere yet.
+- **Deliverable submission via magic link** — accept flow creates the contract, but the public page does not yet expose deliverable submission. Influencers who accept currently have no way to submit content; that needs `/p/contract/[token]` (next).
 
 ### Not started (v1)
 
 - Agency dashboard (`/agency`) — stub.
 - Agency payouts queue (`/agency/payouts`).
-- Magic-link routes (`/p/invitation/[token]`, `/p/campaign/[token]`) — the brand + influencer touchpoint.
-- Token issuance + verification (HMAC-signed, short TTL; single-use for accept/sign, reusable for status views).
-- Token-based action handlers (accept invitation, decline, e-sign kickoff, submit deliverable) — replace the deleted influencer-side server actions.
-- Leegality e-sign integration inside the invitation accept flow.
+- Public **contract page** (`/p/contract/[token]`) — view deliverables, submit / resubmit content, see review feedback.
+- Public **brand campaign page** (`/p/campaign/[token]`) — brand-side approvals + spend view.
+- Leegality e-sign integration inside the accept flow (currently click-to-sign with `esign_skipped: true` audit metadata).
 - Razorpay Contact + Fund Account creation on influencer onboarding.
 
 ### Deferred to v2 (out of v1 scope)
@@ -222,7 +223,8 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 | `/agency/influencers` | Built |
 | `/agency/brands` | Read-only stub |
 | `/agency/payouts` | Stub |
-| `/p/invitation/[token]`, `/p/campaign/[token]` | Missing (v1 next) |
+| `/p/invitation/[token]` | Built (accept/decline; no deliverable submission yet) |
+| `/p/contract/[token]`, `/p/campaign/[token]` | Missing (v1 next) |
 | `POST /api/webhooks/razorpay` | Partial (signature only) |
 | `POST /api/webhooks/leegality` | Built |
 
@@ -246,6 +248,9 @@ LEEGALITY_WEBHOOK_SECRET
 
 RESEND_API_KEY               # used by invitation email
 EMAIL_FROM                   # e.g. "PR Platform <noreply@yourdomain.in>"
+
+TOKEN_SIGNING_SECRET         # HMAC secret for /p/* magic-link tokens
+                             # generate: openssl rand -hex 32
 ```
 
 ---
@@ -294,17 +299,20 @@ from a
 returning id;
 ```
 
-### 8.4 Agency-side happy path
+### 8.4 End-to-end happy path
 
 | # | Action | Expected |
 |---|---|---|
-| 1 | `/agency/influencers` → add influencer by email | Roster row appears |
-| 2 | `/agency/campaigns/new` → pick TestBrand, set budget | Redirect to campaign detail |
-| 3 | Campaign detail → invite influencer (offer + message) | Pending invitation row; Resend invitation email fires |
-| 4 | Inbox of invited influencer | Email arrives; "Review invitation" link points to `/p/invitation/<id>` (404 until that route ships) |
-| 5 | `audit_log` | `invitation_email_sent` row with `email_id` (or `invitation_email_failed` with reason) |
+| 1 | Agency: `/agency/influencers` → add influencer by email | Roster row appears |
+| 2 | Agency: `/agency/campaigns/new` → pick TestBrand, set budget | Redirect to campaign detail |
+| 3 | Agency: campaign detail → invite influencer (offer + message) | Pending invitation row; Resend email fires |
+| 4 | Influencer inbox | Email arrives; "Review invitation" link contains a signed token |
+| 5 | Click link | `/p/invitation/[token]` renders the offer with Accept and Decline buttons |
+| 6 | Click **Accept &amp; sign** | Page shows "You accepted the invitation". Contract row created with `status=signed_by_influencer`. Audit row `invitation_accepted_click_to_sign_via_token` |
+| 7 | Agency: refresh `/agency/contracts/[id]` → add deliverable | Deliverable status `pending` |
+| 8 | `audit_log` | `invitation_email_sent`, `invitation_accepted_click_to_sign_via_token`, deliverable insert |
 
-The accept → contract → deliverable → mark-live tail of the flow is currently exercisable only by hand-editing rows: there is no UI surface that calls `acceptInvitation` / `submitDeliverable` after the scope cut. That returns once `/p/invitation/[token]` ships.
+Deliverable submission via magic link is not yet built — that needs `/p/contract/[token]`.
 
 ### 8.5 Verify in Supabase SQL editor
 
@@ -333,7 +341,8 @@ Razorpay webhook does signature verification but does not act on events yet.
 - **OTP doesn't arrive** — check spam, or use Supabase Auth → Users → "Generate magic link" as a fallback.
 - **Login bounces to `/login?error=agency_only`** — by design. Only `agency_member` accounts can use the app. Other roles are reserved for the magic-link surface.
 - **Invitation email doesn't send** — check `RESEND_API_KEY` + `EMAIL_FROM` in `.env.local`. Failures are logged to `audit_log` with `action=invitation_email_failed`.
-- **Email link 404s** — expected until `/p/invitation/[token]` ships.
+- **Email link says "Server misconfiguration"** — `TOKEN_SIGNING_SECRET` is not set. Generate with `openssl rand -hex 32` and add to `.env.local`.
+- **Email link says "This invitation link has expired"** — token TTL is 30 days. Re-invite from the agency UI to issue a fresh link.
 
 ---
 
@@ -343,10 +352,9 @@ v1 is **agency app + magic-link touchpoints for brand and influencer**. The `/br
 
 Smallest useful PRs in rough priority order:
 
-1. Add **token issuance + verification** (HMAC-signed, short TTL) for invitation + campaign-status links.
-2. Build the public **invitation magic-link page** (`/p/invitation/[token]`) — view offer, accept/decline, kick off e-sign, submit deliverables. Includes the token-based replacements for the deleted `acceptInvitation` / `declineInvitation` / `submitDeliverable` server actions.
-3. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
-4. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
-5. Build the public **campaign status page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.
-6. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
-7. Wire real **Leegality e-sign** into the token-based accept flow once it exists.
+1. Build the public **contract page** (`/p/contract/[token]`) — list deliverables, accept submission URL + caption, show review feedback. Token issued at invitation-accept time, emailed to the influencer.
+2. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
+3. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
+4. Build the public **brand campaign page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.
+5. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
+6. Wire real **Leegality e-sign** into the accept flow (replace the click-to-sign shortcut).

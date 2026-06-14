@@ -14,7 +14,7 @@ PR agencies in India currently run influencer campaigns over Instagram DMs and G
 
 **v1 ships one app: the agency app.** Brands and influencers are touchpoints, not users — they interact via tokenised magic-link pages emailed to them per campaign / invitation. No signup, no login, no separate dashboard.
 
-The existing `/influencer/*` and `/brand/*` route trees in the repo predate this decision. They remain in the codebase but are **not the v1 surface**. New persona work goes into the magic-link flow; do not add features to `/influencer/*` or `/brand/*` unless explicitly scoped.
+The earlier `/influencer/*` and `/brand/*` route trees were **deleted** in the scope cut. Their replacement is the public `/p/*` magic-link surface (not yet built).
 
 ### Personas
 
@@ -74,25 +74,25 @@ src/
 │   ├── (auth)/                       # route group, no shell
 │   │   ├── login/  signup/  check-email/
 │   │   └── actions.ts                # ALL server actions live here
-│   ├── auth/callback/route.ts        # OTP code exchange → role-based redirect
-│   ├── agency/                       # persona shell
+│   ├── auth/callback/route.ts        # OTP exchange → /agency (non-agency
+│   │                                 #   accounts get signed out + bounced)
+│   ├── agency/                       # ONLY persona-bound UI in v1
 │   │   ├── campaigns/{list, new, [campaignId]}
 │   │   ├── contracts/[contractId]
 │   │   ├── brands/  influencers/  payouts/
-│   ├── brand/                        # persona shell (mostly stubs)
-│   ├── influencer/
-│   │   ├── invitations/
-│   │   ├── contracts/{list, [contractId]}
+│   ├── p/                            # public magic-link surface (planned —
+│   │                                 #   /p/invitation/[token], /p/campaign/[token])
 │   └── api/webhooks/
 │       ├── razorpay/route.ts         # signature verified, parse TODO
 │       └── leegality/route.ts        # full implementation
-├── components/PersonaShell.tsx       # sidebar + user menu
+├── components/PersonaShell.tsx       # sidebar + user menu (agency-only in v1)
 ├── lib/
-│   ├── auth/getCurrentUser.ts        # requireUser, requireRole, dashboardPathFor
+│   ├── auth/getCurrentUser.ts        # getCurrentUser, requireUser, requireAgencyMember
 │   ├── supabase/{client,server,admin,middleware}.ts
 │   ├── razorpay/client.ts            # SDK singleton
 │   ├── leegality/client.ts           # createInvitation, fetchSignedPdfUrl
 │   ├── contracts/generate.ts         # HTML + plain text + PDF base64
+│   ├── email/{resend, templates/invitation}.ts  # transactional email
 │   └── money.ts                      # paise ↔ INR
 └── proxy.ts                          # Next.js middleware → updateSession on every req
 
@@ -101,6 +101,8 @@ supabase/migrations/
 ├── 0002_auth_trigger.sql             # handle_new_user trigger
 └── 0003_contract_digio_fields.sql    # Leegality signing URLs + expiry
 ```
+
+`/brand/*` and `/influencer/*` route trees were removed during the v1 scope cut. Their replacement is the magic-link surface under `/p/*` — not yet built.
 
 ---
 
@@ -148,24 +150,28 @@ Agency members see everything inside their agency; brand members see the campaig
 ## 5. Auth flow
 
 ```
-signup form                                      callback                   dashboard
-─────────────                                    ────────                   ─────────
-signInWithOtp({                                  exchangeCodeForSession    /agency
-  email,                                         ↓                         /brand
-  data: { full_name,           email link →     read profile.primary_role  /influencer
-          role,                                  ↓
-          agency_name? }                         dashboardPathFor(role)
-})
-   ↓
-DB trigger handle_new_user                       cookies set via @supabase/ssr
-   creates profile + role row                    middleware (src/proxy.ts) refreshes
-                                                 session on every request
+signup form                                callback                   destination
+─────────────                              ────────                   ───────────
+signInWithOtp({                            exchangeCodeForSession    /agency
+  email,                                   ↓
+  data: { full_name,         email link →  read profile.primary_role
+          role: agency_member,             ↓
+          agency_name }                    agency_member?
+})                                          ├── yes → /agency
+   ↓                                        └── no  → sign out, redirect
+DB trigger handle_new_user                              /login?error=agency_only
+   creates profile + agency_members        cookies set via @supabase/ssr
+                                           middleware refreshes on every request
 ```
 
+`signUpAction` hard-locks `role` to `agency_member` and requires `agency_name`. The UI offers no other role.
+
 Helpers (`src/lib/auth/getCurrentUser.ts`):
-- `getCurrentUser()` — joins `profiles` with `agency_members` / `brand_members` / `influencers`. Returns `agencyId`, `brandId`, `influencerId`.
+- `getCurrentUser()` — joins `profiles` with `agency_members`. Returns `agencyId`.
 - `requireUser()` — redirects to `/login` if no session.
-- `requireRole(role)` — redirects to the correct dashboard on role mismatch.
+- `requireAgencyMember()` — narrows return type to `{ agencyId: string }`. Used by every `/agency/*` page.
+
+Brand and influencer touchpoints in v1 will not go through this auth flow at all — they hit the public `/p/*` magic-link routes with tokens (planned).
 
 ---
 
@@ -173,13 +179,13 @@ Helpers (`src/lib/auth/getCurrentUser.ts`):
 
 ### Done
 
-- Auth: signup, magic-link login, callback, role-based redirect, logout.
+- Auth: agency-only signup, magic-link login, callback (non-agency accounts are signed out + bounced), logout.
 - Agency: campaigns list, create campaign, campaign detail with invite-influencer form.
 - Agency: influencer roster — add by email.
 - Agency: contract detail — add deliverable, review submission (approve / request changes / mark live).
-- Influencer: invitations list, accept (creates contract, e-sign skipped for MVP), decline.
-- Influencer: contracts list grouped by status.
-- Influencer: contract detail — submit / resubmit deliverable.
+- Invitation email via Resend (sent from `inviteInfluencerAction`, audit-logged on success and failure).
+- HMAC-signed magic-link tokens (`src/lib/tokens/`) with 30-day TTL.
+- Public invitation page `/p/invitation/[token]` — view offer, accept (auto-creates contract, click-to-sign), or decline. No login required.
 - Audit log writes on every state-changing action.
 - Leegality webhook: HMAC verified, parses all signed_status events, updates contract status, fetches signed PDF URL.
 - Razorpay webhook endpoint exists with signature verification.
@@ -188,21 +194,21 @@ Helpers (`src/lib/auth/getCurrentUser.ts`):
 
 - **Razorpay webhook** (`src/app/api/webhooks/razorpay/route.ts`) — signature verified, **event parsing + payout status update TODO**.
 - **Agency / brands page** — read-only list. "New brand" button disabled. Brand creation must be done via SQL.
-- **Leegality e-sign** — client + webhook are built but **not called from the invitation acceptance flow**. Acceptance currently writes `status=signed_by_influencer` directly with `esign_skipped: true` in audit metadata.
+- **Deliverable submission via magic link** — accept flow creates the contract, but the public page does not yet expose deliverable submission. Influencers who accept currently have no way to submit content; that needs `/p/contract/[token]` (next).
 
 ### Not started (v1)
 
 - Agency dashboard (`/agency`) — stub.
 - Agency payouts queue (`/agency/payouts`).
-- Magic-link routes for brand + influencer (e.g. `/p/invitation/[token]`, `/p/campaign/[token]`) — replaces the deferred standalone portals.
-- Token issuance + verification (signed, short-lived, single-use for accept/sign; reusable for status views).
+- Public **contract page** (`/p/contract/[token]`) — view deliverables, submit / resubmit content, see review feedback.
+- Public **brand campaign page** (`/p/campaign/[token]`) — brand-side approvals + spend view.
+- Leegality e-sign integration inside the accept flow (currently click-to-sign with `esign_skipped: true` audit metadata).
 - Razorpay Contact + Fund Account creation on influencer onboarding.
-- Resend integration — no emails sent anywhere despite the package being installed.
 
 ### Deferred to v2 (out of v1 scope)
 
-- Standalone brand portal pages (`/brand/*`) — existing stubs stay but get no work.
-- Standalone influencer portal pages (`/influencer/*`) — existing built pages stay (they still work for accounts that signed up before this scope cut) but get no new features.
+- Standalone brand portal app — `/brand/*` route tree was removed in the scope cut.
+- Standalone influencer portal app — `/influencer/*` route tree was removed in the scope cut.
 - `brand_members` invitation flow — v1 uses per-campaign magic links instead, no `brand_members` row needed.
 - Multi-user brand teams.
 
@@ -210,18 +216,15 @@ Helpers (`src/lib/auth/getCurrentUser.ts`):
 
 | Route | State |
 |---|---|
-| `/`, `/signup`, `/login`, `/check-email`, `/auth/callback` | Built |
+| `/`, `/signup`, `/login`, `/check-email`, `/auth/callback` | Built (agency-only) |
 | `/agency` | Stub |
 | `/agency/campaigns`, `/agency/campaigns/new`, `/agency/campaigns/[id]` | Built |
 | `/agency/contracts/[id]` | Built |
 | `/agency/influencers` | Built |
 | `/agency/brands` | Read-only stub |
 | `/agency/payouts` | Stub |
-| `/brand`, `/brand/campaigns/[id]`, `/brand/approvals` | Stub / missing |
-| `/influencer` | Stub |
-| `/influencer/invitations` | Built |
-| `/influencer/contracts`, `/influencer/contracts/[id]` | Built |
-| `/influencer/payouts` | Missing |
+| `/p/invitation/[token]` | Built (accept/decline; no deliverable submission yet) |
+| `/p/contract/[token]`, `/p/campaign/[token]` | Missing (v1 next) |
 | `POST /api/webhooks/razorpay` | Partial (signature only) |
 | `POST /api/webhooks/leegality` | Built |
 
@@ -243,14 +246,18 @@ LEEGALITY_API_KEY
 LEEGALITY_BASE_URL           # optional; defaults to preprod
 LEEGALITY_WEBHOOK_SECRET
 
-RESEND_API_KEY               # not yet consumed
+RESEND_API_KEY               # used by invitation email
+EMAIL_FROM                   # e.g. "PR Platform <noreply@yourdomain.in>"
+
+TOKEN_SIGNING_SECRET         # HMAC secret for /p/* magic-link tokens
+                             # generate: openssl rand -hex 32
 ```
 
 ---
 
 ## 8. Testing the flow end-to-end
 
-You need **three sessions** (three browsers or three Chrome profiles) — one per role. Use Gmail aliases (`you+agency@gmail.com`, `you+inf@gmail.com`, `you+brand@gmail.com`) so all OTPs land in one inbox.
+v1 covers only the agency-side flow. Influencer and brand interactions land via Resend email + the magic-link surface — and that surface isn't built yet, so the influencer half of the loop is **not testable through the UI right now**. Verify it via the audit log and database state.
 
 ### 8.1 Setup
 
@@ -267,20 +274,15 @@ supabase/migrations/0002_auth_trigger.sql
 supabase/migrations/0003_contract_digio_fields.sql
 ```
 
-### 8.2 Create the three accounts
+### 8.2 Create the agency account
 
-| Browser | Signup form |
-|---|---|
-| A — agency | `role=agency_member`, `agency_name=AcmeAgency` |
-| B — influencer | `role=influencer` |
-| C — brand member | `role=brand_member` (profile is created but no `brand_members` row — see next step) |
+Sign up at `/signup` with your name, work email, and agency name. The app hard-locks the role to `agency_member`. Click the magic link in your inbox.
 
-Click the magic link in each Gmail message.
+You also need an `influencers` row to invite — either sign up a second account with `role=influencer` via direct `signInWithOtp` from a script, or insert one manually in the SQL editor (then attach a `profiles` row). The signup UI no longer offers an influencer option.
 
 ### 8.3 Seed a brand (UI not built yet — run in Supabase SQL editor)
 
 ```sql
--- create brand owned by the agency
 with a as (
   select am.agency_id
   from agency_members am
@@ -295,39 +297,26 @@ select a.agency_id,
        'you+brand@gmail.com'
 from a
 returning id;
-
--- attach the brand_member to the brand
-with bid as (select id from brands where name = 'TestBrand' limit 1),
-     pid as (select id from profiles where email = 'you+brand@gmail.com')
-insert into brand_members (brand_id, profile_id, is_owner)
-select bid.id, pid.id, true from bid, pid;
 ```
 
-### 8.4 Happy path
+### 8.4 End-to-end happy path
 
-| # | Browser | Action | Expected |
-|---|---|---|---|
-| 1 | A | `/agency/influencers` → add influencer by email | Roster row appears |
-| 2 | A | `/agency/campaigns/new` → pick TestBrand, set budget | Redirect to campaign detail |
-| 3 | A | Campaign detail → invite influencer (offer + message) | Pending invitation row |
-| 4 | B | `/influencer/invitations` → Accept | Redirects with `?contract=<id>`. Contract status = `signed_by_influencer`, `influencer_signed_at` set |
-| 5 | A | `/agency/contracts/<id>` → add deliverable (type, due, amount) | Deliverable status `pending` |
-| 6 | B | `/influencer/contracts/<id>` → submit (URL + caption) | Status → `submitted` |
-| 7 | A | Refresh contract → **Request changes** + feedback | Status → `changes_requested` |
-| 8 | B | Refresh → **Resubmit** with new URL | Status → `submitted` |
-| 9 | A | Refresh → **Approve** | Status → `approved`, "Mark live" appears |
-| 10 | A | **Mark live** | Status → `live` |
+| # | Action | Expected |
+|---|---|---|
+| 1 | Agency: `/agency/influencers` → add influencer by email | Roster row appears |
+| 2 | Agency: `/agency/campaigns/new` → pick TestBrand, set budget | Redirect to campaign detail |
+| 3 | Agency: campaign detail → invite influencer (offer + message) | Pending invitation row; Resend email fires |
+| 4 | Influencer inbox | Email arrives; "Review invitation" link contains a signed token |
+| 5 | Click link | `/p/invitation/[token]` renders the offer with Accept and Decline buttons |
+| 6 | Click **Accept &amp; sign** | Page shows "You accepted the invitation". Contract row created with `status=signed_by_influencer`. Audit row `invitation_accepted_click_to_sign_via_token` |
+| 7 | Agency: refresh `/agency/contracts/[id]` → add deliverable | Deliverable status `pending` |
+| 8 | `audit_log` | `invitation_email_sent`, `invitation_accepted_click_to_sign_via_token`, deliverable insert |
 
-### 8.5 Decline path
+Deliverable submission via magic link is not yet built — that needs `/p/contract/[token]`.
 
-Repeat the invite with a second influencer (add to roster first). Click **Decline** in browser B. The invitation moves to `declined`, no contract is created.
-
-### 8.6 Verify in Supabase SQL editor
+### 8.5 Verify in Supabase SQL editor
 
 ```sql
-select id, status, influencer_signed_at, brand_signed_at
-from contracts order by created_at desc limit 5;
-
 select id, type, status, due_date, amount_inr_paise
 from deliverables order by created_at desc;
 
@@ -335,12 +324,11 @@ select action, entity_type, metadata, created_at
 from audit_log order by created_at desc limit 20;
 ```
 
-### 8.7 Webhook smoke test (optional)
+### 8.6 Webhook smoke test (optional)
 
 Leegality webhook is the only fully wired one. To exercise it locally:
 
 ```bash
-# expose dev server
 ngrok http 3000
 # point Leegality preprod webhook to https://<ngrok>/api/webhooks/leegality
 # send a test event from the Leegality dashboard
@@ -348,26 +336,25 @@ ngrok http 3000
 
 Razorpay webhook does signature verification but does not act on events yet.
 
-### 8.8 Common gotchas
+### 8.7 Common gotchas
 
 - **OTP doesn't arrive** — check spam, or use Supabase Auth → Users → "Generate magic link" as a fallback.
-- **Agency can't see a contract** — RLS working as designed; check the contract's campaign is owned by that agency.
-- **"invalid_status" submitting** — deliverable already in review or approved.
-- **Brand portal looks empty** — expected. `/brand/*` is mostly stubs.
+- **Login bounces to `/login?error=agency_only`** — by design. Only `agency_member` accounts can use the app. Other roles are reserved for the magic-link surface.
+- **Invitation email doesn't send** — check `RESEND_API_KEY` + `EMAIL_FROM` in `.env.local`. Failures are logged to `audit_log` with `action=invitation_email_failed`.
+- **Email link says "Server misconfiguration"** — `TOKEN_SIGNING_SECRET` is not set. Generate with `openssl rand -hex 32` and add to `.env.local`.
+- **Email link says "This invitation link has expired"** — token TTL is 30 days. Re-invite from the agency UI to issue a fresh link.
 
 ---
 
 ## 9. Where to start contributing
 
-v1 is **agency app + magic-link touchpoints for brand and influencer**. Do not add features to `/influencer/*` or `/brand/*` routes — those are deferred to v2.
+v1 is **agency app + magic-link touchpoints for brand and influencer**. The `/brand/*` and `/influencer/*` route trees are gone; do not bring them back.
 
 Smallest useful PRs in rough priority order:
 
-1. Wire **Resend** into `inviteInfluencerAction` — email contains the magic-link to the invitation page.
-2. Add **token issuance + verification** (HMAC-signed, short TTL) and a `tokens` table (or signed JWT-style payload) for invitation + campaign-status links.
-3. Build the public **invitation magic-link page** (`/p/invitation/[token]`) — view offer, accept/decline, kick off e-sign, submit deliverables.
-4. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
-5. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
-6. Build the public **campaign status page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.
-7. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
-8. Replace MVP "click-to-sign" with the real **Leegality flow** inside `acceptInvitationAction` — `createInvitation` + persist signing URLs.
+1. Build the public **contract page** (`/p/contract/[token]`) — list deliverables, accept submission URL + caption, show review feedback. Token issued at invitation-accept time, emailed to the influencer.
+2. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
+3. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
+4. Build the public **brand campaign page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.
+5. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
+6. Wire real **Leegality e-sign** into the accept flow (replace the click-to-sign shortcut).

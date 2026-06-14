@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/getCurrentUser";
+import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { formatPaiseAsINR } from "@/lib/money";
 import {
   addDeliverableAction,
@@ -51,7 +51,7 @@ export default async function AgencyContractDetail({
 }) {
   const { contractId } = await params;
   const { error, added, reviewed, live } = await searchParams;
-  const user = await requireRole("agency_member");
+  const user = await requireAgencyMember();
 
   const supabase = await createSupabaseServerClient();
 

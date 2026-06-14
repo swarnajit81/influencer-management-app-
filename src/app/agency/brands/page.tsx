@@ -1,8 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/getCurrentUser";
+import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 
 export default async function AgencyBrands() {
-  const user = await requireRole("agency_member");
+  const user = await requireAgencyMember();
 
   const supabase = await createSupabaseServerClient();
   const { data: brands } = await supabase

@@ -23,6 +23,8 @@ const ERROR_LABELS: Record<string, string> = {
   no_account_number:
     "RAZORPAY_ACCOUNT_NUMBER is not set in the environment. Add the agency's RazorpayX virtual account number to .env.local.",
   razorpay_error: "Razorpay rejected the payout.",
+  razorpay_not_configured:
+    "Razorpay keys are not set. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env.local.",
   db_insert_failed: "Couldn't write the payout row.",
 };
 

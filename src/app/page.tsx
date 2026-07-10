@@ -22,19 +22,48 @@ export default function Home() {
 
       <main className="mx-auto max-w-3xl px-6 py-24">
         <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          Run influencer campaigns without losing the thread.
+          Your brand asks &ldquo;where are we?&rdquo; This answers before they ask.
         </h1>
         <p className="mt-6 text-lg text-zinc-600 dark:text-zinc-400">
-          One workspace for PR agencies, brands, and creators. Briefs, contracts,
-          deliverables, and payouts &mdash; all in one place, all in INR.
+          One workspace for PR agencies running influencer campaigns. Every brief,
+          offer, approval, and revision on the record &mdash; with a live status link
+          your brand can open any time. No more Friday status decks.
         </p>
 
         <div className="mt-10 grid gap-4 sm:grid-cols-3">
-          <FeatureCard title="Campaigns" body="Brand briefs, influencer shortlists, and status tracking in one view." />
-          <FeatureCard title="Contracts" body="E-signed via Aadhaar (Digio) &mdash; no more PDF email chains." />
-          <FeatureCard title="Payouts" body="Razorpay-backed UPI / bank transfers triggered on approval." />
+          <FeatureCard
+            title="Live brand status page"
+            body="Every campaign gets a link the brand can open any time — brief, deliverables, approvals, spend. No signup for them, no reporting afternoon for you."
+          />
+          <FeatureCard
+            title="Audit trail on everything"
+            body="Who approved what, when, with what feedback — timestamped. Disputes end with a link, not a screenshot hunt."
+          />
+          <FeatureCard
+            title="Offers &amp; contracts on record"
+            body="Structured invitations replace DM negotiations. One-click acceptance generates the contract. Automated INR payouts on the roadmap."
+          />
         </div>
+
+        <p className="mt-12 text-sm text-zinc-500">
+          Built for Indian agencies. Amounts in INR, records that hold up when someone asks
+          &ldquo;who approved this?&rdquo;
+        </p>
       </main>
+
+      <footer className="border-t border-zinc-200 dark:border-zinc-800">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 text-xs text-zinc-500">
+          <span>PR Platform</span>
+          <div className="flex gap-4">
+            <Link href="/terms" className="hover:text-zinc-700 dark:hover:text-zinc-300">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-zinc-700 dark:hover:text-zinc-300">
+              Privacy
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

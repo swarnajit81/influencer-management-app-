@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { log } from "@/lib/log";
 
 let cachedClient: Resend | null = null;
 
@@ -37,7 +38,13 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     replyTo: input.replyTo,
   });
 
-  if (error) return { ok: false, reason: "send_failed", message: error.message };
-  if (!data?.id) return { ok: false, reason: "send_failed", message: "no_id_returned" };
+  if (error) {
+    log.error("email_send_failed", { to: input.to, subject: input.subject, error: error.message });
+    return { ok: false, reason: "send_failed", message: error.message };
+  }
+  if (!data?.id) {
+    log.error("email_send_failed", { to: input.to, subject: input.subject, error: "no_id_returned" });
+    return { ok: false, reason: "send_failed", message: "no_id_returned" };
+  }
   return { ok: true, id: data.id };
 }

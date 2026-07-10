@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { log } from "@/lib/log";
 
 // Razorpay sends payout.* and payment.* events.
 // Docs: https://razorpay.com/docs/webhooks/validate-test/
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
     .digest("hex");
 
   if (expected !== signature) {
+    log.warn("razorpay_webhook_bad_signature", {});
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
@@ -66,6 +68,10 @@ export async function POST(request: Request) {
     .single();
 
   if (!payout) {
+    log.warn("razorpay_webhook_no_matching_payout", {
+      razorpay_payout_id: razorpayPayoutId,
+      event: eventType,
+    });
     return NextResponse.json({ received: true, no_match: razorpayPayoutId });
   }
 

@@ -14,7 +14,7 @@ PR agencies in India currently run influencer campaigns over Instagram DMs and G
 
 **v1 ships one app: the agency app.** Brands and influencers are touchpoints, not users — they interact via tokenised magic-link pages emailed to them per campaign / invitation. No signup, no login, no separate dashboard.
 
-The earlier `/influencer/*` and `/brand/*` route trees were **deleted** in the scope cut. Their replacement is the public `/p/*` magic-link surface (not yet built).
+The earlier `/influencer/*` and `/brand/*` route trees were **deleted** in the scope cut. Their replacement is the public `/p/*` magic-link surface.
 
 ### Personas
 
@@ -33,8 +33,9 @@ The earlier `/influencer/*` and `/brand/*` route trees were **deleted** in the s
 ### Why the integrations exist
 
 - **Razorpay Route** — marketplace payouts in INR. Per-influencer Razorpay Contact + Fund Account created at onboarding.
-- **Leegality** (formerly Digio) — Aadhaar e-sign for contracts. Legally enforceable in India (stronger than DocuSign here).
 - **Resend** — transactional email (invitations, signing reminders, payout confirmations).
+
+Aadhaar e-sign (Leegality/Digio) was removed from v1 — contracts use click-to-sign acceptance on the public invitation page. E-sign is deferred to v2.
 
 ---
 
@@ -50,7 +51,6 @@ The earlier `/influencer/*` and `/brand/*` route trees were **deleted** in the s
 | Forms | react-hook-form + Zod | 7.72.1 / 4.3.6 |
 | Payments | Razorpay SDK | 2.9.6 |
 | Email | Resend (installed, not wired) | 6.12.0 |
-| E-sign | Leegality (custom HTTP client) | — |
 | Lint | ESLint + eslint-config-next | 9 / 16.2.4 |
 
 ### Key architectural choices
@@ -80,17 +80,15 @@ src/
 │   │   ├── campaigns/{list, new, [campaignId]}
 │   │   ├── contracts/[contractId]
 │   │   ├── brands/  influencers/  payouts/
-│   ├── p/                            # public magic-link surface (planned —
-│   │                                 #   /p/invitation/[token], /p/campaign/[token])
+│   ├── p/                            # public magic-link surface:
+│   │                                 #   invitation/[token], contract/[token], campaign/[token]
 │   └── api/webhooks/
-│       ├── razorpay/route.ts         # signature verified, parse TODO
-│       └── leegality/route.ts        # full implementation
+│       └── razorpay/route.ts         # signature verified, payout events applied
 ├── components/PersonaShell.tsx       # sidebar + user menu (agency-only in v1)
 ├── lib/
 │   ├── auth/getCurrentUser.ts        # getCurrentUser, requireUser, requireAgencyMember
 │   ├── supabase/{client,server,admin,middleware}.ts
 │   ├── razorpay/client.ts            # SDK singleton
-│   ├── leegality/client.ts           # createInvitation, fetchSignedPdfUrl
 │   ├── contracts/generate.ts         # HTML + plain text + PDF base64
 │   ├── email/{resend, templates/invitation}.ts  # transactional email
 │   └── money.ts                      # paise ↔ INR
@@ -99,10 +97,12 @@ src/
 supabase/migrations/
 ├── 0001_initial_schema.sql           # tables, enums, RLS policies
 ├── 0002_auth_trigger.sql             # handle_new_user trigger
-└── 0003_contract_digio_fields.sql    # Leegality signing URLs + expiry
+├── 0003_contract_digio_fields.sql    # e-sign columns (unused in v1, kept for v2)
+├── 0004_fix_campaign_policy_recursion.sql  # breaks RLS policy cycle via security definer fn
+└── 0005_grants.sql                   # API-role table grants (needed for local stacks)
 ```
 
-`/brand/*` and `/influencer/*` route trees were removed during the v1 scope cut. Their replacement is the magic-link surface under `/p/*` — not yet built.
+`/brand/*` and `/influencer/*` route trees were removed during the v1 scope cut. Their replacement is the magic-link surface under `/p/*`.
 
 ---
 
@@ -171,7 +171,7 @@ Helpers (`src/lib/auth/getCurrentUser.ts`):
 - `requireUser()` — redirects to `/login` if no session.
 - `requireAgencyMember()` — narrows return type to `{ agencyId: string }`. Used by every `/agency/*` page.
 
-Brand and influencer touchpoints in v1 will not go through this auth flow at all — they hit the public `/p/*` magic-link routes with tokens (planned).
+Brand and influencer touchpoints in v1 will not go through this auth flow at all — they hit the public `/p/*` magic-link routes with tokens.
 
 ---
 
@@ -184,29 +184,26 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 - Agency: influencer roster — add by email.
 - Agency: contract detail — add deliverable, review submission (approve / request changes / mark live).
 - Invitation email via Resend (sent from `inviteInfluencerAction`, audit-logged on success and failure).
-- HMAC-signed magic-link tokens (`src/lib/tokens/`) with 30-day TTL. Token kinds: `invitation`, `contract`.
-- Public invitation page `/p/invitation/[token]` — view offer, accept (auto-creates contract, click-to-sign), or decline. No login required.
-- Public contract page `/p/contract/[token]` — view contract terms + deliverable list, submit / resubmit each deliverable. Issued at accept-time and threaded into the accept confirmation screen.
+- HMAC-signed magic-link tokens (`src/lib/tokens/`) with 30-day TTL. Token kinds: `invitation`, `contract`, `campaign`.
+- Public invitation page `/p/invitation/[token]` — view offer, accept, or decline. On accept: contract created via click-to-sign (`status=signed_by_influencer`), follow-up email with contract link sent.
+- Public contract page `/p/contract/[token]` — view contract terms + deliverable list, submit / resubmit each deliverable.
+- Public brand campaign page `/p/campaign/[token]` — read-only campaign brief + invitation list + deliverable list, with Approve / Request changes on submitted deliverables. Brand email triggered automatically on campaign creation.
+- Razorpay payouts end-to-end: agency saves influencer bank details, hits "Initiate payout" on `/agency/payouts`, RazorpayX Contact + Fund Account are created lazily, payout row tracks status, webhook updates status to paid / failed / reversed.
+- Agency dashboard `/agency` with stat cards, attention list, recent campaigns, activity feed.
+- Brand creation UI on `/agency/brands`.
 - Audit log writes on every state-changing action.
-- Leegality webhook: HMAC verified, parses all signed_status events, updates contract status, fetches signed PDF URL.
-- Razorpay webhook endpoint exists with signature verification.
-
-### Partially done
-
-- **Razorpay webhook** (`src/app/api/webhooks/razorpay/route.ts`) — signature verified, **event parsing + payout status update TODO**.
-- **Agency / brands page** — read-only list. "New brand" button disabled. Brand creation must be done via SQL.
-- **Contract-link email follow-up** — after accept, the contract link only appears on the in-browser confirmation screen. No email is sent yet, so influencers who close the tab need to ask the agency for a new link. Resend wiring on accept is the next small follow-up.
+- Razorpay webhook: signature verified, payout.* events mapped onto `payouts.status`.
+- Razorpay payout call carries an `X-Payout-Idempotency` header (payout row UUID) so retries can't double-pay.
+- Agency settings page `/agency/settings` — edit name, GSTIN, PAN, logo URL, address (owner-only via RLS).
+- Structured JSON logging (`src/lib/log.ts`) wired into email sends, payouts, webhooks, and the auth callback.
 
 ### Not started (v1)
 
-- Agency dashboard (`/agency`) — stub.
-- Agency payouts queue (`/agency/payouts`).
-- Public **brand campaign page** (`/p/campaign/[token]`) — brand-side approvals + spend view.
-- Leegality e-sign integration inside the accept flow (currently click-to-sign with `esign_skipped: true` audit metadata).
-- Razorpay Contact + Fund Account creation on influencer onboarding.
+- Production hardening: rotate the Supabase keys that leaked through an earlier `.env.example`, verify the Resend `EMAIL_FROM` domain.
 
 ### Deferred to v2 (out of v1 scope)
 
+- Aadhaar e-sign (Leegality) — removed from v1; contracts are click-to-sign. The `contracts` e-sign columns from `0003_contract_digio_fields.sql` remain for when this returns.
 - Standalone brand portal app — `/brand/*` route tree was removed in the scope cut.
 - Standalone influencer portal app — `/influencer/*` route tree was removed in the scope cut.
 - `brand_members` invitation flow — v1 uses per-campaign magic links instead, no `brand_members` row needed.
@@ -223,11 +220,14 @@ Brand and influencer touchpoints in v1 will not go through this auth flow at all
 | `/agency/influencers` | Built |
 | `/agency/brands` | Read-only stub |
 | `/agency/payouts` | Stub |
-| `/p/invitation/[token]` | Built (accept/decline) |
+| `/agency` | Built (dashboard) |
+| `/agency/payouts` | Built |
+| `/agency/influencers/[id]` | Built (bank details + payout history) |
+| `/p/invitation/[token]` | Built (accept/decline + e-sign kickoff) |
 | `/p/contract/[token]` | Built (deliverable submit / resubmit) |
-| `/p/campaign/[token]` | Missing (v1 next) |
-| `POST /api/webhooks/razorpay` | Partial (signature only) |
-| `POST /api/webhooks/leegality` | Built |
+| `/p/campaign/[token]` | Built (brand approvals) |
+| `/agency/settings` | Built (owner-only edit) |
+| `POST /api/webhooks/razorpay` | Built |
 
 ---
 
@@ -242,10 +242,7 @@ NEXT_PUBLIC_APP_URL          # used for OTP redirect
 RAZORPAY_KEY_ID
 RAZORPAY_KEY_SECRET
 RAZORPAY_WEBHOOK_SECRET
-
-LEEGALITY_API_KEY
-LEEGALITY_BASE_URL           # optional; defaults to preprod
-LEEGALITY_WEBHOOK_SECRET
+RAZORPAY_ACCOUNT_NUMBER      # agency's RazorpayX virtual account
 
 RESEND_API_KEY               # used by invitation email
 EMAIL_FROM                   # e.g. "PR Platform <noreply@yourdomain.in>"
@@ -258,22 +255,17 @@ TOKEN_SIGNING_SECRET         # HMAC secret for /p/* magic-link tokens
 
 ## 8. Testing the flow end-to-end
 
-v1 covers only the agency-side flow. Influencer and brand interactions land via Resend email + the magic-link surface — and that surface isn't built yet, so the influencer half of the loop is **not testable through the UI right now**. Verify it via the audit log and database state.
+The full loop is testable in the UI: agency app + the public `/p/*` magic-link pages for influencer and brand.
 
 ### 8.1 Setup
 
 ```bash
 npm install
-npm run dev   # http://localhost:3000
+supabase start   # local Supabase stack (Docker); applies supabase/migrations/
+npm run dev      # http://localhost:3000
 ```
 
-Apply migrations to your Supabase project (SQL editor, in order):
-
-```
-supabase/migrations/0001_initial_schema.sql
-supabase/migrations/0002_auth_trigger.sql
-supabase/migrations/0003_contract_digio_fields.sql
-```
+Point `.env.local` at the local stack (`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321` plus the anon/service keys `supabase start` prints). Local auth emails land in Mailpit at http://127.0.0.1:54324. For a hosted project, apply the migrations in the SQL editor in order instead.
 
 ### 8.2 Create the agency account
 
@@ -281,7 +273,9 @@ Sign up at `/signup` with your name, work email, and agency name. The app hard-l
 
 You also need an `influencers` row to invite — either sign up a second account with `role=influencer` via direct `signInWithOtp` from a script, or insert one manually in the SQL editor (then attach a `profiles` row). The signup UI no longer offers an influencer option.
 
-### 8.3 Seed a brand (UI not built yet — run in Supabase SQL editor)
+### 8.3 Add a brand
+
+Use `/agency/brands` — the form covers name, contact email, GSTIN, PAN, and billing address. (SQL fallback below if you prefer the editor.)
 
 ```sql
 with a as (
@@ -329,15 +323,13 @@ from audit_log order by created_at desc limit 20;
 
 ### 8.6 Webhook smoke test (optional)
 
-Leegality webhook is the only fully wired one. To exercise it locally:
+Razorpay webhook verifies the `x-razorpay-signature` HMAC and applies `payout.*` events to `payouts.status`. To exercise it locally:
 
 ```bash
 ngrok http 3000
-# point Leegality preprod webhook to https://<ngrok>/api/webhooks/leegality
-# send a test event from the Leegality dashboard
+# point the RazorpayX webhook to https://<ngrok>/api/webhooks/razorpay
+# send a test event from the Razorpay dashboard
 ```
-
-Razorpay webhook does signature verification but does not act on events yet.
 
 ### 8.7 Common gotchas
 
@@ -353,11 +345,9 @@ Razorpay webhook does signature verification but does not act on events yet.
 
 v1 is **agency app + magic-link touchpoints for brand and influencer**. The `/brand/*` and `/influencer/*` route trees are gone; do not bring them back.
 
-Smallest useful PRs in rough priority order:
+v1 is feature-complete. Remaining work is hardening and polish, in rough priority order:
 
-1. Send the **contract link by email** on accept and again on `changes_requested`. Small follow-up — template + Resend call, similar shape to the invitation email.
-2. Build the **agency dashboard** at `/agency` — read straight from `campaigns`, `campaign_invitations`, `payouts`.
-3. Build the **brand creation** UI for agency members (replace the disabled button on `/agency/brands`).
-4. Build the public **brand campaign page** (`/p/campaign/[token]`) — brand-facing read-only view + approve/reject content.
-5. Finish the **Razorpay webhook** handler — parse `payout.processed` / `payout.failed`, update `payouts.status`, write to `audit_log`.
-6. Wire real **Leegality e-sign** into the accept flow (replace the click-to-sign shortcut).
+1. **Rotate the leaked Supabase keys.** An earlier `.env.example` committed live anon + service-role keys before being gitignored. Rotate in the Supabase dashboard, update `.env.local`. (The original hosted project no longer resolves — a fresh project or the local stack is needed either way.)
+2. **Verify the Resend sender domain** for `EMAIL_FROM`. Until then, only your own inbox accepts the test sends.
+3. **Ship logs somewhere** — `src/lib/log.ts` emits structured JSON; point it at Sentry/Axiom for production.
+4. **Live Razorpay payout test** — the payout path (contact + fund account + idempotent payout call) is only exercised against error paths locally; run one real payout against test-mode keys before launch.

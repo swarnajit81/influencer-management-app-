@@ -13,6 +13,7 @@ export default async function AgencyLayout({ children }: { children: React.React
         { href: "/agency/brands", label: "Brands" },
         { href: "/agency/influencers", label: "Influencers" },
         { href: "/agency/payouts", label: "Payouts" },
+        { href: "/agency/settings", label: "Settings" },
       ]}
     >
       {children}

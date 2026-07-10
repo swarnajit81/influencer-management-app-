@@ -255,10 +255,11 @@ export async function inviteInfluencerAction(formData: FormData) {
     redirect(`/agency/campaigns?error=campaign_not_found`);
   }
 
-  // Verify influencer is on the agency's roster
+  // Verify influencer is on the agency's roster. The table has a composite
+  // PK (agency_id, influencer_id) — there is no id column.
   const { data: roster } = await supabase
     .from("agency_influencer_roster")
-    .select("id")
+    .select("agency_id")
     .eq("agency_id", user.agencyId)
     .eq("influencer_id", influencerId)
     .single();
@@ -392,8 +393,10 @@ export async function addInfluencerToRosterAction(formData: FormData) {
 
   const supabase = await createSupabaseServerClient();
 
-  // Find influencer by email
-  const { data: profile } = await supabase
+  // Look up the influencer with the admin client: profiles RLS is
+  // self-select-only, so the agency's session can't see other users' rows.
+  const admin = createSupabaseAdminClient();
+  const { data: profile } = await admin
     .from("profiles")
     .select("id")
     .eq("email", email)
@@ -405,7 +408,7 @@ export async function addInfluencerToRosterAction(formData: FormData) {
   }
 
   // Find the influencer record
-  const { data: influencer } = await supabase
+  const { data: influencer } = await admin
     .from("influencers")
     .select("id")
     .eq("profile_id", profile.id)
@@ -415,10 +418,10 @@ export async function addInfluencerToRosterAction(formData: FormData) {
     redirect("/agency/influencers?error=influencer_not_found");
   }
 
-  // Check if already on roster
+  // Check if already on roster (composite PK — no id column)
   const { data: existing } = await supabase
     .from("agency_influencer_roster")
-    .select("id")
+    .select("agency_id")
     .eq("agency_id", user.agencyId)
     .eq("influencer_id", influencer.id)
     .maybeSingle();
@@ -717,7 +720,7 @@ export async function updateInfluencerBankAction(formData: FormData) {
   const supabase = await createSupabaseServerClient();
   const { data: roster } = await supabase
     .from("agency_influencer_roster")
-    .select("id")
+    .select("agency_id")
     .eq("agency_id", user.agencyId)
     .eq("influencer_id", influencerId)
     .single();

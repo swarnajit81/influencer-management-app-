@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { razorpay } from "./client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { log } from "@/lib/log";
 
 export type InfluencerForPayout = {
   id: string;
@@ -19,7 +20,7 @@ export type EnsurePayoutsResult =
   | { ok: true; contactId: string; fundAccountId: string }
   | {
       ok: false;
-      reason: "missing_bank_details" | "razorpay_error";
+      reason: "missing_bank_details" | "razorpay_error" | "razorpay_not_configured";
       message?: string;
     };
 
@@ -57,6 +58,12 @@ async function loadInfluencerForPayout(
 export async function ensureInfluencerPayoutSetup(
   influencerId: string,
 ): Promise<EnsurePayoutsResult> {
+  // The Razorpay SDK constructor throws if keys are absent — guard here so a
+  // missing env var surfaces as a banner, not a 500.
+  if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    return { ok: false, reason: "razorpay_not_configured" };
+  }
+
   const inf = await loadInfluencerForPayout(influencerId);
   if (!inf) return { ok: false, reason: "missing_bank_details" };
 
@@ -108,11 +115,9 @@ export async function ensureInfluencerPayoutSetup(
       fundAccountId: fundAccountId!,
     };
   } catch (err: any) {
-    return {
-      ok: false,
-      reason: "razorpay_error",
-      message: err?.error?.description ?? err?.message ?? "razorpay_failed",
-    };
+    const message = err?.error?.description ?? err?.message ?? "razorpay_failed";
+    log.error("razorpay_setup_failed", { influencer_id: inf.id, error: message });
+    return { ok: false, reason: "razorpay_error", message };
   }
 }
 
@@ -164,19 +169,38 @@ export async function createInfluencerPayout(
     return { ok: false, reason: "db_insert_failed", message: insertErr?.message };
   }
 
-  const rzp = razorpay() as any;
   try {
-    const payout = await rzp.payouts.create({
-      account_number: accountNumber,
-      fund_account_id: setup.fundAccountId,
-      amount: input.amountPaise,
-      currency: "INR",
-      mode: "IMPS",
-      purpose: input.purpose ?? "payout",
-      queue_if_low_balance: true,
-      reference_id: (payoutRow as any).id,
-      narration: input.narration ?? "Influencer payout",
+    // The Node SDK's payouts.create cannot set per-request headers, so we hit
+    // the REST API directly to pass X-Payout-Idempotency. The payout row UUID
+    // is the idempotency key: a retry of the same row can never double-pay.
+    const res = await fetch("https://api.razorpay.com/v1/payouts", {
+      method: "POST",
+      headers: {
+        Authorization:
+          "Basic " +
+          Buffer.from(
+            `${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`,
+          ).toString("base64"),
+        "Content-Type": "application/json",
+        "X-Payout-Idempotency": (payoutRow as any).id,
+      },
+      body: JSON.stringify({
+        account_number: accountNumber,
+        fund_account_id: setup.fundAccountId,
+        amount: input.amountPaise,
+        currency: "INR",
+        mode: "IMPS",
+        purpose: input.purpose ?? "payout",
+        queue_if_low_balance: true,
+        reference_id: (payoutRow as any).id,
+        narration: input.narration ?? "Influencer payout",
+      }),
     });
+
+    const payout = await res.json();
+    if (!res.ok) {
+      throw { error: payout?.error, message: payout?.error?.description };
+    }
 
     await admin
       .from("payouts")
@@ -195,6 +219,11 @@ export async function createInfluencerPayout(
   } catch (err: any) {
     const message =
       err?.error?.description ?? err?.message ?? "razorpay_payout_failed";
+    log.error("razorpay_payout_failed", {
+      payout_id: (payoutRow as any).id,
+      contract_id: input.contractId,
+      error: message,
+    });
     await admin
       .from("payouts")
       .update({

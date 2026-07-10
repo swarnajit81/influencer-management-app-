@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { AGENCY_DASHBOARD_PATH } from "@/lib/auth/getCurrentUser";
+import { log } from "@/lib/log";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -33,13 +34,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=session_lost", url.origin));
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileErr } = await supabase
     .from("profiles")
     .select("primary_role")
     .eq("id", user.id)
     .single();
 
   if (profile?.primary_role !== "agency_member") {
+    log.warn("auth_callback_bounced_non_agency", {
+      user_id: user.id,
+      profile_role: profile?.primary_role ?? null,
+      profile_error: profileErr?.message ?? null,
+    });
     await supabase.auth.signOut();
     return NextResponse.redirect(new URL("/login?error=agency_only", url.origin));
   }

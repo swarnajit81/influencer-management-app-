@@ -62,7 +62,7 @@ work already delivered remain payable.</p>
 <p>This Agreement is governed by the laws of India. Disputes shall be resolved by the
 courts at Bengaluru, Karnataka.</p>
 
-<p style="margin-top:2rem">By electronically signing this document via Digio Aadhaar e-sign,
+<p style="margin-top:2rem">By electronically accepting this document,
 the Influencer accepts these terms.</p>
 </body></html>`;
 }
@@ -110,7 +110,7 @@ export function buildContractPlainText(d: ContractData): string {
     "This Agreement is governed by the laws of India. Disputes shall be resolved",
     "by the courts at Bengaluru, Karnataka.",
     "",
-    "By electronically signing this document via Digio Aadhaar e-sign,",
+    "By electronically accepting this document,",
     "the Influencer accepts these terms.",
   ].join("\n");
 }

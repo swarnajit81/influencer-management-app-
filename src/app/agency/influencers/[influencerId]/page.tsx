@@ -20,7 +20,7 @@ export default async function InfluencerDetailPage({ params, searchParams }: Pag
   const { data: roster } = await supabase
     .from("agency_influencer_roster")
     .select(
-      `id, notes,
+      `notes,
        influencers!inner (
          id, display_name, instagram_handle, youtube_handle, twitter_handle,
          primary_platform, follower_count_total, city, state,

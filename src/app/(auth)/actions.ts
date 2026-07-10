@@ -6,7 +6,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/auth/getCurrentUser";
 import { sendEmail } from "@/lib/email/resend";
 import { buildInvitationEmail } from "@/lib/email/templates/invitation";
+import { buildContractLinkEmail } from "@/lib/email/templates/contract-link";
+import { buildBrandCampaignEmail } from "@/lib/email/templates/brand-campaign";
 import { signToken } from "@/lib/tokens";
+import { createInfluencerPayout } from "@/lib/razorpay/payouts";
+import { formatPaiseAsINR } from "@/lib/money";
 
 function appUrl(path: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -63,6 +67,42 @@ export async function logOutAction() {
   redirect("/");
 }
 
+export async function createBrandAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const contactEmail = String(formData.get("contact_email") ?? "").trim().toLowerCase();
+  const contactPhone = String(formData.get("contact_phone") ?? "").trim() || null;
+  const gstin = String(formData.get("gstin") ?? "").trim().toUpperCase() || null;
+  const pan = String(formData.get("pan") ?? "").trim().toUpperCase() || null;
+  const billingAddress = String(formData.get("billing_address") ?? "").trim() || null;
+
+  if (!name || !contactEmail) {
+    redirect("/agency/brands?error=invalid_input");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("brands").insert({
+    agency_id: user.agencyId,
+    name,
+    contact_email: contactEmail,
+    contact_phone: contactPhone,
+    gstin,
+    pan,
+    billing_address: billingAddress,
+  });
+
+  if (error) {
+    redirect(`/agency/brands?error=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect(`/agency/brands?created=${encodeURIComponent(name)}`);
+}
+
 export async function createCampaignAction(formData: FormData) {
   const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
   const user = await getCurrentUser();
@@ -115,7 +155,74 @@ export async function createCampaignAction(formData: FormData) {
     redirect(`/agency/campaigns?error=${encodeURIComponent(error.message)}`);
   }
 
+  await sendBrandCampaignEmail({
+    campaignId: campaign.id,
+    actorProfileId: user.id,
+    agencyId: user.agencyId,
+    budgetPaise: Math.round(budgetRupees * 100),
+  });
+
   redirect(`/agency/campaigns/${campaign.id}`);
+}
+
+async function sendBrandCampaignEmail(params: {
+  campaignId: string;
+  actorProfileId: string;
+  agencyId: string;
+  budgetPaise: number;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  const { data: ctx } = await admin
+    .from("campaigns")
+    .select(
+      `id, name,
+       brands!inner ( name, contact_email )`,
+    )
+    .eq("id", params.campaignId)
+    .single();
+
+  const { data: agency } = await admin
+    .from("agencies")
+    .select("name")
+    .eq("id", params.agencyId)
+    .single();
+
+  if (!ctx || !agency) return;
+
+  const row = ctx as unknown as {
+    id: string;
+    name: string;
+    brands: { name: string; contact_email: string } | { name: string; contact_email: string }[];
+  };
+  const brand = Array.isArray(row.brands) ? row.brands[0] : row.brands;
+  if (!brand?.contact_email) return;
+
+  const campaignToken = signToken({ kind: "campaign", campaignId: params.campaignId });
+  const { subject, html, text } = buildBrandCampaignEmail({
+    brandName: brand.name,
+    agencyName: (agency as { name: string }).name,
+    campaignName: row.name,
+    campaignUrl: appUrl(`/p/campaign/${campaignToken}`),
+    budgetInr: formatPaiseAsINR(params.budgetPaise),
+  });
+
+  const result = await sendEmail({
+    to: brand.contact_email,
+    subject,
+    html,
+    text,
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: params.actorProfileId,
+    entity_type: "campaign",
+    entity_id: params.campaignId,
+    action: result.ok ? "brand_campaign_email_sent" : "brand_campaign_email_failed",
+    metadata: result.ok
+      ? { provider: "resend", email_id: result.id, to: brand.contact_email }
+      : { provider: "resend", reason: result.reason, error: result.message },
+  });
 }
 
 export async function inviteInfluencerAction(formData: FormData) {
@@ -148,10 +255,11 @@ export async function inviteInfluencerAction(formData: FormData) {
     redirect(`/agency/campaigns?error=campaign_not_found`);
   }
 
-  // Verify influencer is on the agency's roster
+  // Verify influencer is on the agency's roster. The table has a composite
+  // PK (agency_id, influencer_id) — there is no id column.
   const { data: roster } = await supabase
     .from("agency_influencer_roster")
-    .select("id")
+    .select("agency_id")
     .eq("agency_id", user.agencyId)
     .eq("influencer_id", influencerId)
     .single();
@@ -285,8 +393,10 @@ export async function addInfluencerToRosterAction(formData: FormData) {
 
   const supabase = await createSupabaseServerClient();
 
-  // Find influencer by email
-  const { data: profile } = await supabase
+  // Look up the influencer with the admin client: profiles RLS is
+  // self-select-only, so the agency's session can't see other users' rows.
+  const admin = createSupabaseAdminClient();
+  const { data: profile } = await admin
     .from("profiles")
     .select("id")
     .eq("email", email)
@@ -298,7 +408,7 @@ export async function addInfluencerToRosterAction(formData: FormData) {
   }
 
   // Find the influencer record
-  const { data: influencer } = await supabase
+  const { data: influencer } = await admin
     .from("influencers")
     .select("id")
     .eq("profile_id", profile.id)
@@ -308,10 +418,10 @@ export async function addInfluencerToRosterAction(formData: FormData) {
     redirect("/agency/influencers?error=influencer_not_found");
   }
 
-  // Check if already on roster
+  // Check if already on roster (composite PK — no id column)
   const { data: existing } = await supabase
     .from("agency_influencer_roster")
-    .select("id")
+    .select("agency_id")
     .eq("agency_id", user.agencyId)
     .eq("influencer_id", influencer.id)
     .maybeSingle();
@@ -468,7 +578,79 @@ export async function reviewDeliverableAction(formData: FormData) {
     metadata: { feedback },
   });
 
+  if (nextStatus === "changes_requested") {
+    await sendChangesRequestedEmail({
+      contractId,
+      actorProfileId: user.id,
+      feedback,
+    });
+  }
+
   redirect(`/agency/contracts/${contractId}?reviewed=1`);
+}
+
+async function sendChangesRequestedEmail(params: {
+  contractId: string;
+  actorProfileId: string;
+  feedback: string | null;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  const { data: contract } = await admin
+    .from("contracts")
+    .select(
+      `id,
+       campaigns!inner ( name, agencies ( name ), brands ( name ) ),
+       influencers!inner ( display_name, profiles ( email, full_name ) )`,
+    )
+    .eq("id", params.contractId)
+    .single();
+
+  if (!contract) return;
+
+  const row = contract as any;
+  const campaign = Array.isArray(row.campaigns) ? row.campaigns[0] : row.campaigns;
+  const agency = Array.isArray(campaign?.agencies) ? campaign.agencies[0] : campaign?.agencies;
+  const brand = Array.isArray(campaign?.brands) ? campaign.brands[0] : campaign?.brands;
+  const influencer = Array.isArray(row.influencers) ? row.influencers[0] : row.influencers;
+  const profile = Array.isArray(influencer?.profiles)
+    ? influencer.profiles[0]
+    : influencer?.profiles;
+
+  if (!profile?.email) return;
+
+  const contractToken = signToken({ kind: "contract", contractId: params.contractId });
+  const { subject, html, text } = buildContractLinkEmail({
+    context: "changes_requested",
+    influencerName: influencer?.display_name ?? profile.full_name ?? "there",
+    agencyName: agency?.name ?? "the agency",
+    brandName: brand?.name ?? "the brand",
+    campaignName: campaign?.name ?? "the campaign",
+    contractUrl: appUrl(`/p/contract/${contractToken}`),
+    feedback: params.feedback,
+  });
+
+  const result = await sendEmail({
+    to: profile.email,
+    subject,
+    html,
+    text,
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: params.actorProfileId,
+    entity_type: "contract",
+    entity_id: params.contractId,
+    action: result.ok ? "contract_link_email_sent" : "contract_link_email_failed",
+    metadata: result.ok
+      ? { provider: "resend", email_id: result.id, context: "changes_requested" }
+      : {
+          provider: "resend",
+          reason: result.reason,
+          error: result.message,
+          context: "changes_requested",
+        },
+  });
 }
 
 export async function markDeliverableLiveAction(formData: FormData) {
@@ -513,4 +695,157 @@ export async function markDeliverableLiveAction(formData: FormData) {
   });
 
   redirect(`/agency/contracts/${contractId}?live=1`);
+}
+
+// -----------------------------------------------------------------
+// Influencer detail + payouts
+// -----------------------------------------------------------------
+
+export async function updateInfluencerBankAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const influencerId = String(formData.get("influencer_id") ?? "").trim();
+  const accountNumber = String(formData.get("bank_account_number") ?? "").trim() || null;
+  const ifsc = String(formData.get("bank_ifsc") ?? "").trim().toUpperCase() || null;
+  const holderName = String(formData.get("bank_account_holder_name") ?? "").trim() || null;
+  const pan = String(formData.get("pan") ?? "").trim().toUpperCase() || null;
+  const gstin = String(formData.get("gstin") ?? "").trim().toUpperCase() || null;
+
+  if (!influencerId) redirect("/agency/influencers?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: roster } = await supabase
+    .from("agency_influencer_roster")
+    .select("agency_id")
+    .eq("agency_id", user.agencyId)
+    .eq("influencer_id", influencerId)
+    .single();
+  if (!roster) {
+    redirect(`/agency/influencers?error=not_on_roster`);
+  }
+
+  // Only the agency's roster gate matters; influencer details are mutated via
+  // admin client because RLS scopes influencer writes to the influencer itself.
+  const admin = createSupabaseAdminClient();
+  const updates: Record<string, string | null> = {};
+  if (accountNumber !== null) updates.bank_account_number = accountNumber;
+  if (ifsc !== null) updates.bank_ifsc = ifsc;
+  if (holderName !== null) updates.bank_account_holder_name = holderName;
+  if (pan !== null) updates.pan = pan;
+  if (gstin !== null) updates.gstin = gstin;
+
+  // If bank details changed, the cached Razorpay fund account is stale.
+  if (
+    "bank_account_number" in updates ||
+    "bank_ifsc" in updates ||
+    "bank_account_holder_name" in updates
+  ) {
+    updates.razorpay_fund_account_id = null;
+  }
+
+  const { error } = await admin
+    .from("influencers")
+    .update(updates)
+    .eq("id", influencerId);
+
+  if (error) {
+    redirect(
+      `/agency/influencers/${influencerId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "influencer",
+    entity_id: influencerId,
+    action: "bank_details_updated",
+    metadata: { fields: Object.keys(updates) },
+  });
+
+  redirect(`/agency/influencers/${influencerId}?saved=1`);
+}
+
+export async function initiatePayoutAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const deliverableId = String(formData.get("deliverable_id") ?? "").trim();
+  if (!deliverableId) redirect("/agency/payouts?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: deliverable } = await supabase
+    .from("deliverables")
+    .select(
+      `id, status, amount_inr_paise, contract_id,
+       contracts!inner ( influencer_id, campaigns!inner ( agency_id ) )`,
+    )
+    .eq("id", deliverableId)
+    .single();
+
+  if (!deliverable) redirect(`/agency/payouts?error=not_found`);
+  const row = deliverable as any;
+  const contract = Array.isArray(row.contracts) ? row.contracts[0] : row.contracts;
+  const campaign = Array.isArray(contract?.campaigns)
+    ? contract.campaigns[0]
+    : contract?.campaigns;
+
+  if (campaign?.agency_id !== user.agencyId) {
+    redirect(`/agency/payouts?error=not_yours`);
+  }
+  if (!["approved", "live"].includes(row.status)) {
+    redirect(`/agency/payouts?error=not_payable_${row.status}`);
+  }
+
+  // Already paid out?
+  const admin = createSupabaseAdminClient();
+  const { data: existing } = await admin
+    .from("payouts")
+    .select("id, status")
+    .eq("deliverable_id", deliverableId)
+    .in("status", ["pending", "queued", "processing", "paid"])
+    .limit(1)
+    .maybeSingle();
+  if (existing) {
+    redirect(`/agency/payouts?error=already_initiated`);
+  }
+
+  const result = await createInfluencerPayout({
+    influencerId: contract.influencer_id,
+    contractId: row.contract_id,
+    deliverableId,
+    amountPaise: Number(row.amount_inr_paise),
+    purpose: "payout",
+    narration: "Influencer deliverable payout",
+  });
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "deliverable",
+    entity_id: deliverableId,
+    action: result.ok ? "payout_initiated" : "payout_failed",
+    metadata: result.ok
+      ? {
+          payout_id: result.payoutId,
+          razorpay_payout_id: result.razorpayPayoutId,
+          amount_inr_paise: row.amount_inr_paise,
+        }
+      : { reason: result.reason, error: result.message },
+  });
+
+  if (!result.ok) {
+    redirect(
+      `/agency/payouts?error=${encodeURIComponent(result.reason)}${
+        result.message ? `&details=${encodeURIComponent(result.message)}` : ""
+      }`,
+    );
+  }
+
+  redirect(`/agency/payouts?initiated=${result.payoutId}`);
 }

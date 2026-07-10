@@ -3,8 +3,15 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { verifyToken } from "@/lib/tokens";
+import { verifyToken, signToken } from "@/lib/tokens";
 import { buildContractHtml } from "@/lib/contracts/generate";
+import { sendEmail } from "@/lib/email/resend";
+import { buildContractLinkEmail } from "@/lib/email/templates/contract-link";
+
+function appUrl(path: string): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  return new URL(path, base).toString();
+}
 
 type InvitationContext = {
   invitationId: string;
@@ -150,7 +157,39 @@ export async function acceptInvitationViaTokenAction(formData: FormData) {
     metadata: { invitation_id: ctx.invitationId, esign_skipped: true },
   });
 
-  redirect(`/p/invitation/${encodeURIComponent(token)}?accepted=1`);
+  const contractToken = signToken({ kind: "contract", contractId: contract.id });
+
+  if (ctx.influencerEmail) {
+    const { subject, html, text } = buildContractLinkEmail({
+      context: "accepted",
+      influencerName: ctx.influencerName,
+      agencyName: ctx.agencyName,
+      brandName: ctx.brandName,
+      campaignName: ctx.campaignName,
+      contractUrl: appUrl(`/p/contract/${contractToken}`),
+    });
+    const result = await sendEmail({
+      to: ctx.influencerEmail,
+      subject,
+      html,
+      text,
+    });
+    await admin.from("audit_log").insert({
+      actor_profile_id: ctx.influencerProfileId,
+      entity_type: "contract",
+      entity_id: contract.id,
+      action: result.ok ? "contract_link_email_sent" : "contract_link_email_failed",
+      metadata: result.ok
+        ? { provider: "resend", email_id: result.id, context: "accepted" }
+        : { provider: "resend", reason: result.reason, error: result.message, context: "accepted" },
+    });
+  }
+
+  redirect(
+    `/p/invitation/${encodeURIComponent(token)}?accepted=1&contract=${encodeURIComponent(
+      contractToken,
+    )}`,
+  );
 }
 
 export async function declineInvitationViaTokenAction(formData: FormData) {

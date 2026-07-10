@@ -1,7 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type TokenPayload =
-  | { kind: "invitation"; invitationId: string; exp: number };
+  | { kind: "invitation"; invitationId: string; exp: number }
+  | { kind: "contract"; contractId: string; exp: number }
+  | { kind: "campaign"; campaignId: string; exp: number };
 
 export type VerifyResult =
   | { ok: true; payload: TokenPayload }
@@ -26,18 +28,23 @@ function sign(body: string, key: string): string {
   return b64urlEncode(createHmac("sha256", key).update(body).digest());
 }
 
+type UnsignedPayload =
+  | { kind: "invitation"; invitationId: string }
+  | { kind: "contract"; contractId: string }
+  | { kind: "campaign"; campaignId: string };
+
 export function signToken(
-  payload: Omit<TokenPayload, "exp"> & { exp?: number; ttlDays?: number },
+  payload: UnsignedPayload,
+  options?: { ttlDays?: number },
 ): string {
   const key = secret();
   if (!key) throw new Error("TOKEN_SIGNING_SECRET is not set");
 
   const exp =
-    payload.exp ??
     Math.floor(Date.now() / 1000) +
-      (payload.ttlDays ?? DEFAULT_TTL_DAYS) * 24 * 60 * 60;
+    (options?.ttlDays ?? DEFAULT_TTL_DAYS) * 24 * 60 * 60;
 
-  const body: TokenPayload = { ...payload, exp } as TokenPayload;
+  const body = { ...payload, exp } as TokenPayload;
   const encoded = b64urlEncode(Buffer.from(JSON.stringify(body), "utf8"));
   const sig = sign(encoded, key);
   return `${encoded}.${sig}`;

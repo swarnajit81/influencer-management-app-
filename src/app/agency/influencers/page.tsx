@@ -47,9 +47,10 @@ export default async function AgencyInfluencers({
           {roster && roster.length > 0 ? (
             <div className="space-y-2">
               {roster.map((r: any) => (
-                <div
+                <Link
                   key={r.influencer_id}
-                  className="flex items-center justify-between rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
+                  href={`/agency/influencers/${r.influencer_id}`}
+                  className="flex items-center justify-between rounded-lg border border-zinc-200 p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
                 >
                   <div>
                     <p className="font-medium text-sm">{r.influencers?.display_name}</p>
@@ -58,7 +59,8 @@ export default async function AgencyInfluencers({
                       {r.influencers?.follower_count_total.toLocaleString()} followers
                     </p>
                   </div>
-                </div>
+                  <span className="text-xs text-zinc-400">→</span>
+                </Link>
               ))}
             </div>
           ) : (

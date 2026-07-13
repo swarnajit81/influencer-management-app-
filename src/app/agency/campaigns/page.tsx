@@ -61,9 +61,17 @@ export default async function AgencyCampaigns({
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {campaigns.map((c: any) => (
-                <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                <tr
+                  key={c.id}
+                  style={{ viewTransitionName: `campaign-${c.id}` }}
+                  className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                >
                   <td className="px-4 py-3">
-                    <Link href={`/agency/campaigns/${c.id}`} className="font-medium hover:underline">
+                    <Link
+                      href={`/agency/campaigns/${c.id}`}
+                      transitionTypes={["nav-forward"]}
+                      className="font-medium hover:underline"
+                    >
                       {c.name}
                     </Link>
                   </td>

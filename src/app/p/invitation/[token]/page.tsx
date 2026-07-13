@@ -6,6 +6,7 @@ import {
   acceptInvitationViaTokenAction,
   declineInvitationViaTokenAction,
 } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type PageProps = {
   params: Promise<{ token: string }>;
@@ -147,21 +148,23 @@ export default async function InvitationPage({ params, searchParams }: PageProps
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
         <form action={acceptInvitationViaTokenAction}>
           <input type="hidden" name="token" value={token} />
-          <button
-            type="submit"
-            className="w-full rounded-md bg-zinc-900 px-4 py-3 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          <SubmitButton
+            className="w-full !py-3"
+            variant="primary"
+            pendingLabel="Signing…"
           >
             Accept &amp; sign
-          </button>
+          </SubmitButton>
         </form>
         <form action={declineInvitationViaTokenAction}>
           <input type="hidden" name="token" value={token} />
-          <button
-            type="submit"
-            className="w-full rounded-md border border-zinc-300 px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          <SubmitButton
+            className="w-full !py-3"
+            variant="secondary"
+            pendingLabel="Declining…"
           >
             Decline
-          </button>
+          </SubmitButton>
         </form>
       </div>
 

@@ -4,6 +4,7 @@ import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatPaiseAsINR } from "@/lib/money";
 import { initiatePayoutAction } from "@/app/(auth)/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type PageProps = {
   searchParams: Promise<{
@@ -146,12 +147,12 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
                     </div>
                     <form action={initiatePayoutAction}>
                       <input type="hidden" name="deliverable_id" value={d.id} />
-                      <button
-                        type="submit"
-                        className="rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                      <SubmitButton
+                        className="!px-3 !py-2 !text-xs"
+                        pendingLabel="Initiating…"
                       >
                         Initiate payout
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 </li>

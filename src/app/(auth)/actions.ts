@@ -165,6 +165,73 @@ export async function createCampaignAction(formData: FormData) {
   redirect(`/agency/campaigns/${campaign.id}`);
 }
 
+const CAMPAIGN_STATUSES = ["draft", "active", "completed", "cancelled"] as const;
+
+export async function updateCampaignAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const brief = String(formData.get("brief") ?? "").trim() || null;
+  const budgetRupees = Number(formData.get("budget_rupees") ?? 0);
+  const startDate = String(formData.get("start_date") ?? "").trim() || null;
+  const endDate = String(formData.get("end_date") ?? "").trim() || null;
+  const status = String(formData.get("status") ?? "").trim();
+
+  if (!campaignId) redirect("/agency/campaigns?error=invalid_input");
+  if (!name || budgetRupees <= 0) {
+    redirect(`/agency/campaigns/${campaignId}/edit?error=invalid_input`);
+  }
+  if (!(CAMPAIGN_STATUSES as readonly string[]).includes(status)) {
+    redirect(`/agency/campaigns/${campaignId}/edit?error=invalid_status`);
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  const { data: existing } = await supabase
+    .from("campaigns")
+    .select("id")
+    .eq("id", campaignId)
+    .eq("agency_id", user.agencyId)
+    .single();
+
+  if (!existing) redirect("/agency/campaigns?error=campaign_not_found");
+
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      name,
+      brief,
+      total_budget_inr_paise: Math.round(budgetRupees * 100),
+      start_date: startDate,
+      end_date: endDate,
+      status,
+    })
+    .eq("id", campaignId)
+    .eq("agency_id", user.agencyId);
+
+  if (error) {
+    redirect(
+      `/agency/campaigns/${campaignId}/edit?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  const admin = createSupabaseAdminClient();
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "campaign",
+    entity_id: campaignId,
+    action: "campaign_updated",
+    metadata: { fields: ["name", "brief", "total_budget_inr_paise", "start_date", "end_date", "status"] },
+  });
+
+  redirect(`/agency/campaigns/${campaignId}?updated=1`);
+}
+
 async function sendBrandCampaignEmail(params: {
   campaignId: string;
   actorProfileId: string;

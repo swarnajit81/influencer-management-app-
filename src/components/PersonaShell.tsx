@@ -17,7 +17,10 @@ export function PersonaShell({
 }) {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
-      <aside className="fixed inset-y-0 left-0 flex w-56 flex-col border-r border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <aside
+        style={{ viewTransitionName: "agency-shell" }}
+        className="fixed inset-y-0 left-0 flex w-56 flex-col border-r border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+      >
         <Link href="/" className="text-sm font-semibold tracking-tight">
           PR Platform
         </Link>

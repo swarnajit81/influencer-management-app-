@@ -2,6 +2,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { createBrandAction } from "@/app/(auth)/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_input: "Name and contact email are required.",
@@ -96,12 +97,7 @@ export default async function AgencyBrands({
             <textarea name="billing_address" rows={2} className="input" />
           </Field>
           <div className="sm:col-span-2">
-            <button
-              type="submit"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Add brand
-            </button>
+            <SubmitButton pendingLabel="Adding…">Add brand</SubmitButton>
           </div>
         </form>
       </section>

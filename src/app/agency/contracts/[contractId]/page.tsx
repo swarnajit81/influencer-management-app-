@@ -7,6 +7,7 @@ import {
   reviewDeliverableAction,
   markDeliverableLiveAction,
 } from "@/app/(auth)/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const DELIVERABLE_TYPES: Array<{ value: string; label: string }> = [
   { value: "instagram_post", label: "Instagram post" },
@@ -113,6 +114,7 @@ export default async function AgencyContractDetail({
     <div className="max-w-4xl">
       <Link
         href={`/agency/campaigns/${camp.id}`}
+        transitionTypes={["nav-back"]}
         className="mb-6 inline-block text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
       >
         ← Back to campaign
@@ -197,12 +199,7 @@ export default async function AgencyContractDetail({
               className="input mt-1"
             />
           </label>
-          <button
-            type="submit"
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            Add deliverable
-          </button>
+          <SubmitButton pendingLabel="Adding…">Add deliverable</SubmitButton>
         </form>
       </div>
     </div>
@@ -290,22 +287,22 @@ function DeliverableCard({ d, contractId }: { d: any; contractId: string }) {
             className="input"
           />
           <div className="flex gap-2">
-            <button
-              type="submit"
+            <SubmitButton
               name="decision"
               value="approve"
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              variant="success"
+              pendingLabel="Approving…"
             >
               Approve
-            </button>
-            <button
-              type="submit"
+            </SubmitButton>
+            <SubmitButton
               name="decision"
               value="request_changes"
-              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              variant="secondary"
+              pendingLabel="Sending…"
             >
               Request changes
-            </button>
+            </SubmitButton>
           </div>
         </form>
       )}
@@ -314,12 +311,7 @@ function DeliverableCard({ d, contractId }: { d: any; contractId: string }) {
         <form action={markDeliverableLiveAction} className="mt-4">
           <input type="hidden" name="deliverable_id" value={d.id} />
           <input type="hidden" name="contract_id" value={contractId} />
-          <button
-            type="submit"
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            Mark live
-          </button>
+          <SubmitButton pendingLabel="Marking…">Mark live</SubmitButton>
         </form>
       )}
     </div>

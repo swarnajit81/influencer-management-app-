@@ -3,16 +3,17 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { formatPaiseAsINR } from "@/lib/money";
 import { inviteInfluencerAction } from "@/app/(auth)/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export default async function CampaignDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ campaignId: string }>;
-  searchParams: Promise<{ error?: string; invited?: string }>;
+  searchParams: Promise<{ error?: string; invited?: string; updated?: string }>;
 }) {
   const { campaignId } = await params;
-  const { error, invited } = await searchParams;
+  const { error, invited, updated } = await searchParams;
   const user = await requireAgencyMember();
 
   const supabase = await createSupabaseServerClient();
@@ -73,20 +74,33 @@ export default async function CampaignDetailPage({
     <div className="max-w-4xl">
       <Link
         href="/agency/campaigns"
+        transitionTypes={["nav-back"]}
         className="mb-6 inline-block text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
       >
         ← Back to campaigns
       </Link>
 
-      <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-start justify-between">
+      <div
+        style={{ viewTransitionName: `campaign-${campaignId}` }}
+        className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">{campaign.name}</h1>
             <p className="mt-1 text-sm text-zinc-500">{campaign.brands?.name}</p>
           </div>
-          <span className="inline-block rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-            {campaign.status}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="inline-block rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              {campaign.status}
+            </span>
+            <Link
+              href={`/agency/campaigns/${campaignId}/edit`}
+              transitionTypes={["nav-forward"]}
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Edit
+            </Link>
+          </div>
         </div>
 
         {campaign.brief && (
@@ -119,6 +133,11 @@ export default async function CampaignDetailPage({
       {invited && (
         <div className="mb-6 rounded-md bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300">
           Invitation sent!
+        </div>
+      )}
+      {updated && (
+        <div className="mb-6 rounded-md bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300">
+          Campaign updated.
         </div>
       )}
 
@@ -204,12 +223,7 @@ export default async function CampaignDetailPage({
               <textarea name="offer_message" rows={3} className="input mt-1" />
             </label>
 
-            <button
-              type="submit"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Send invitation
-            </button>
+            <SubmitButton pendingLabel="Sending…">Send invitation</SubmitButton>
           </form>
         </div>
       )}

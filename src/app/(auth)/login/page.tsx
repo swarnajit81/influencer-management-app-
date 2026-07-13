@@ -1,5 +1,13 @@
 import Link from "next/link";
 import { logInAction } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_input: "Please enter your email.",
+  agency_only: "This app is for agency members. Please sign up first.",
+  "Signups not allowed for otp":
+    "No account found with that email. Please sign up first.",
+};
 
 export default async function LoginPage({
   searchParams,
@@ -7,6 +15,7 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
+  const message = error ? (ERROR_MESSAGES[error] ?? error) : null;
 
   return (
     <div className="mx-auto max-w-md px-6 py-16">
@@ -27,18 +36,15 @@ export default async function LoginPage({
           />
         </label>
 
-        {error && (
+        {message && (
           <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-            {error}
+            {message}
           </p>
         )}
 
-        <button
-          type="submit"
-          className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
+        <SubmitButton className="w-full" pendingLabel="Sending link…">
           Send magic link
-        </button>
+        </SubmitButton>
       </form>
 
       <p className="mt-6 text-center text-sm text-zinc-500">

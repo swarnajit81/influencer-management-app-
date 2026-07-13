@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyToken, type VerifyResult } from "@/lib/tokens";
 import { formatPaiseAsINR } from "@/lib/money";
 import { submitDeliverableViaTokenAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type PageProps = {
   params: Promise<{ token: string }>;
@@ -222,12 +223,9 @@ export default async function ContractPage({ params, searchParams }: PageProps) 
                     <Field label="Notes for the agency (optional)">
                       <input type="text" name="notes" className="input" />
                     </Field>
-                    <button
-                      type="submit"
-                      className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                    >
+                    <SubmitButton pendingLabel="Submitting…">
                       {d.status === "changes_requested" ? "Resubmit" : "Submit"}
-                    </button>
+                    </SubmitButton>
                   </form>
                 )}
               </li>

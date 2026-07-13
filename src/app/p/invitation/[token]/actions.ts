@@ -121,10 +121,18 @@ export async function acceptInvitationViaTokenAction(formData: FormData) {
     effectiveDate: nowIso.slice(0, 10),
   });
 
-  await admin
+  // Conditional update: only the first accepting request flips pending → accepted.
+  // Double-clicks or races land on the redirect below.
+  const { data: claimed } = await admin
     .from("campaign_invitations")
     .update({ status: "accepted", responded_at: nowIso })
-    .eq("id", ctx.invitationId);
+    .eq("id", ctx.invitationId)
+    .eq("status", "pending")
+    .select("id");
+
+  if (!claimed || claimed.length === 0) {
+    redirect(`/p/invitation/${encodeURIComponent(token)}?error=already_accepted`);
+  }
 
   const { data: contract, error: contractErr } = await admin
     .from("contracts")
@@ -142,6 +150,11 @@ export async function acceptInvitationViaTokenAction(formData: FormData) {
     .single();
 
   if (contractErr || !contract) {
+    // 23505 = unique_violation on contracts.invitation_id — another request
+    // already created the contract for this invitation.
+    if ((contractErr as { code?: string } | null)?.code === "23505") {
+      redirect(`/p/invitation/${encodeURIComponent(token)}?error=already_accepted`);
+    }
     redirect(
       `/p/invitation/${encodeURIComponent(token)}?error=${encodeURIComponent(
         contractErr?.message ?? "contract_create_failed",

@@ -105,7 +105,25 @@
       "Bash(node -e \"console.log\\(require\\('next/package.json'\\).version\\)\")",
       "Bash(node -e \"console.log\\('react', require\\('react/package.json'\\).version\\)\")",
       "Bash(node -e \"const r=require\\('react'\\); console.log\\('ViewTransition:', typeof r.unstable_ViewTransition, '| ViewTransition:', typeof r.ViewTransition\\)\")",
-      "Bash(echo \"TSC_EXIT=$?\")"
+      "Bash(echo \"TSC_EXIT=$?\")",
+      "Bash(git commit *)",
+      "Bash(curl -s -o /dev/null -w \"dev :3000 http=%{http_code}\\\\n\" http://localhost:3000/ -m 5)",
+      "mcp__claude-in-chrome__list_connected_browsers",
+      "mcp__claude-in-chrome__tabs_create_mcp",
+      "Bash(curl -s http://localhost:3000/signup -m 10)",
+      "Bash(grep -oE 'name=\"\\\\$ACTION_\\(ID|REF\\)_[^\"]*\"|action=\"[^\"]*\"|\\\\$ACTION_ID_[a-f0-9]+')",
+      "Bash(curl -s http://localhost:3000/login -m 10)",
+      "Bash(grep -oE '\\\\$ACTION_\\(ID|REF\\)_[a-f0-9]+')",
+      "Bash(node scripts/qa-e2e.mjs)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000)",
+      "Skill(claude-in-chrome)",
+      "Bash(node *)",
+      "Read(//tmp/**)",
+      "Bash(python3 *)",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__form_input"
     ]
   }
 }

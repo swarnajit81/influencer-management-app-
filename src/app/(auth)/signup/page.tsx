@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signUpAction } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_input: "Please fill in all required fields.",
@@ -57,12 +58,9 @@ export default async function SignupPage({
           </p>
         )}
 
-        <button
-          type="submit"
-          className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
+        <SubmitButton className="w-full" pendingLabel="Sending link…">
           Send magic link
-        </button>
+        </SubmitButton>
       </form>
 
       <p className="mt-6 text-center text-sm text-zinc-500">

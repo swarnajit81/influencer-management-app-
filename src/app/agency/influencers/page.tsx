@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { addInfluencerToRosterAction } from "@/app/(auth)/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export default async function AgencyInfluencers({
   searchParams,
@@ -85,12 +86,9 @@ export default async function AgencyInfluencers({
                 They must be signed up as a creator first.
               </p>
             </label>
-            <button
-              type="submit"
-              className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
+            <SubmitButton className="w-full" pendingLabel="Adding…">
               Add to roster
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </div>

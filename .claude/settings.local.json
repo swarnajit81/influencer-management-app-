@@ -123,7 +123,15 @@
       "Read(//tmp/**)",
       "Bash(python3 *)",
       "mcp__claude-in-chrome__find",
-      "mcp__claude-in-chrome__form_input"
+      "mcp__claude-in-chrome__form_input",
+      "Bash(vercel --prod --yes)",
+      "Bash(supabase migration *)",
+      "Bash(psql *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl *)",
+      "Bash(wait)",
+      "Bash(xargs kill *)",
+      "Bash(kill 63827)"
     ]
   }
 }

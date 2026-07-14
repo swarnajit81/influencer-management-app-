@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/auth/getCurrentUser";
@@ -915,4 +916,459 @@ export async function initiatePayoutAction(formData: FormData) {
   }
 
   redirect(`/agency/payouts?initiated=${result.payoutId}`);
+}
+
+// -----------------------------------------------------------------
+// Roster management (Sprint 1): agency-owned influencer records
+// -----------------------------------------------------------------
+
+const PLATFORMS = ["instagram", "youtube", "twitter", "other"] as const;
+
+function toIntOrNull(v: FormDataEntryValue | null): number | null {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+function toDecimalOrNull(v: FormDataEntryValue | null): number | null {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function parseCategories(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0)
+    .slice(0, 20);
+}
+
+function parsePortfolioUrls(raw: string): string[] {
+  return raw
+    .split(/\s+|,/)
+    .map((s) => s.trim())
+    .filter((s) => /^https?:\/\//i.test(s))
+    .slice(0, 20);
+}
+
+export async function createInfluencerAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const displayName = String(formData.get("display_name") ?? "").trim();
+  const instagramHandle = normalizeHandle(formData.get("instagram_handle"));
+  const youtubeHandle = normalizeHandle(formData.get("youtube_handle"));
+  const twitterHandle = normalizeHandle(formData.get("twitter_handle"));
+  const primaryPlatform = String(formData.get("primary_platform") ?? "").trim();
+  const followerCount = toIntOrNull(formData.get("follower_count_total"));
+  const engagementRate = toDecimalOrNull(formData.get("engagement_rate"));
+  const city = String(formData.get("city") ?? "").trim() || null;
+  const state = String(formData.get("state") ?? "").trim() || null;
+  const contactEmail = String(formData.get("contact_email") ?? "").trim().toLowerCase() || null;
+  const contactPhone = String(formData.get("contact_phone") ?? "").trim() || null;
+  const bio = String(formData.get("bio") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  const categories = parseCategories(String(formData.get("categories") ?? ""));
+  const portfolioUrls = parsePortfolioUrls(String(formData.get("portfolio_urls") ?? ""));
+
+  if (!displayName) {
+    redirect("/agency/influencers/new?error=display_name_required");
+  }
+  if (
+    primaryPlatform &&
+    !(PLATFORMS as readonly string[]).includes(primaryPlatform)
+  ) {
+    redirect("/agency/influencers/new?error=invalid_platform");
+  }
+
+  const admin = createSupabaseAdminClient();
+
+  // Dedupe on (agency roster, instagram_handle). If an existing influencer on
+  // this agency's roster already uses the handle, redirect instead of dup.
+  if (instagramHandle) {
+    const { data: dupe } = await admin
+      .from("agency_influencer_roster")
+      .select("influencer_id, influencers!inner (instagram_handle)")
+      .eq("agency_id", user.agencyId)
+      .eq("influencers.instagram_handle", instagramHandle)
+      .maybeSingle();
+    if (dupe?.influencer_id) {
+      redirect(
+        `/agency/influencers/${dupe.influencer_id}?error=duplicate_handle`,
+      );
+    }
+  }
+
+  const { data: inf, error: infErr } = await admin
+    .from("influencers")
+    .insert({
+      display_name: displayName,
+      instagram_handle: instagramHandle,
+      youtube_handle: youtubeHandle,
+      twitter_handle: twitterHandle,
+      primary_platform: primaryPlatform || null,
+      follower_count_total: followerCount ?? 0,
+      engagement_rate: engagementRate,
+      city,
+      state,
+      contact_email: contactEmail,
+      contact_phone: contactPhone,
+      bio,
+      notes,
+      niches: categories,
+      portfolio_urls: portfolioUrls,
+    })
+    .select("id")
+    .single();
+
+  if (infErr || !inf) {
+    redirect(
+      `/agency/influencers/new?error=${encodeURIComponent(
+        infErr?.message ?? "create_failed",
+      )}`,
+    );
+  }
+
+  const { error: rosterErr } = await admin.from("agency_influencer_roster").insert({
+    agency_id: user.agencyId,
+    influencer_id: inf.id,
+    added_by: user.id,
+  });
+  if (rosterErr) {
+    redirect(
+      `/agency/influencers?error=${encodeURIComponent(rosterErr.message)}`,
+    );
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "influencer",
+    entity_id: inf.id,
+    action: "influencer_created",
+    metadata: { source: "manual" },
+  });
+
+  revalidatePath("/agency/influencers");
+  redirect(`/agency/influencers/${inf.id}?saved=1`);
+}
+
+function normalizeHandle(raw: FormDataEntryValue | null): string | null {
+  const s = String(raw ?? "").trim().replace(/^@+/, "");
+  return s.length > 0 ? s.toLowerCase() : null;
+}
+
+export async function updateInfluencerProfileAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const influencerId = String(formData.get("influencer_id") ?? "").trim();
+  if (!influencerId) redirect("/agency/influencers?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: roster } = await supabase
+    .from("agency_influencer_roster")
+    .select("agency_id")
+    .eq("agency_id", user.agencyId)
+    .eq("influencer_id", influencerId)
+    .single();
+  if (!roster) redirect("/agency/influencers?error=not_on_roster");
+
+  const admin = createSupabaseAdminClient();
+  const updates: Record<string, unknown> = {
+    display_name: String(formData.get("display_name") ?? "").trim(),
+    instagram_handle: normalizeHandle(formData.get("instagram_handle")),
+    youtube_handle: normalizeHandle(formData.get("youtube_handle")),
+    twitter_handle: normalizeHandle(formData.get("twitter_handle")),
+    primary_platform:
+      String(formData.get("primary_platform") ?? "").trim() || null,
+    follower_count_total: toIntOrNull(formData.get("follower_count_total")) ?? 0,
+    engagement_rate: toDecimalOrNull(formData.get("engagement_rate")),
+    city: String(formData.get("city") ?? "").trim() || null,
+    state: String(formData.get("state") ?? "").trim() || null,
+    contact_email:
+      String(formData.get("contact_email") ?? "").trim().toLowerCase() || null,
+    contact_phone: String(formData.get("contact_phone") ?? "").trim() || null,
+    bio: String(formData.get("bio") ?? "").trim() || null,
+    notes: String(formData.get("notes") ?? "").trim() || null,
+    niches: parseCategories(String(formData.get("categories") ?? "")),
+    portfolio_urls: parsePortfolioUrls(
+      String(formData.get("portfolio_urls") ?? ""),
+    ),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!updates.display_name) {
+    redirect(`/agency/influencers/${influencerId}?error=display_name_required`);
+  }
+
+  const { error } = await admin
+    .from("influencers")
+    .update(updates)
+    .eq("id", influencerId);
+
+  if (error) {
+    redirect(
+      `/agency/influencers/${influencerId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "influencer",
+    entity_id: influencerId,
+    action: "influencer_profile_updated",
+    metadata: { fields: Object.keys(updates) },
+  });
+
+  revalidatePath(`/agency/influencers/${influencerId}`);
+  revalidatePath("/agency/influencers");
+  redirect(`/agency/influencers/${influencerId}?saved=1`);
+}
+
+export async function removeInfluencerFromRosterAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const influencerId = String(formData.get("influencer_id") ?? "").trim();
+  if (!influencerId) redirect("/agency/influencers?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("agency_influencer_roster")
+    .delete()
+    .eq("agency_id", user.agencyId)
+    .eq("influencer_id", influencerId);
+
+  if (error) {
+    redirect(`/agency/influencers?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/agency/influencers");
+  redirect("/agency/influencers?removed=1");
+}
+
+const RATE_CARD_TYPES = [
+  "instagram_post",
+  "instagram_reel",
+  "instagram_story",
+  "youtube_video",
+  "youtube_short",
+  "twitter_post",
+  "blog_post",
+  "other",
+] as const;
+
+export async function saveRateCardAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const influencerId = String(formData.get("influencer_id") ?? "").trim();
+  if (!influencerId) redirect("/agency/influencers?error=invalid_input");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: roster } = await supabase
+    .from("agency_influencer_roster")
+    .select("agency_id")
+    .eq("agency_id", user.agencyId)
+    .eq("influencer_id", influencerId)
+    .single();
+  if (!roster) redirect("/agency/influencers?error=not_on_roster");
+
+  const admin = createSupabaseAdminClient();
+  const rows: Array<{
+    influencer_id: string;
+    deliverable_type: string;
+    cost_inr_paise: number;
+  }> = [];
+  const deletes: string[] = [];
+
+  for (const t of RATE_CARD_TYPES) {
+    const raw = formData.get(`rate_${t}`);
+    if (raw === null || String(raw).trim() === "") {
+      deletes.push(t);
+      continue;
+    }
+    const rupees = Number(raw);
+    if (!Number.isFinite(rupees) || rupees < 0) continue;
+    rows.push({
+      influencer_id: influencerId,
+      deliverable_type: t,
+      cost_inr_paise: Math.round(rupees * 100),
+    });
+  }
+
+  if (rows.length > 0) {
+    const { error } = await admin
+      .from("influencer_rate_card")
+      .upsert(rows, { onConflict: "influencer_id,deliverable_type" });
+    if (error) {
+      redirect(
+        `/agency/influencers/${influencerId}?error=${encodeURIComponent(error.message)}`,
+      );
+    }
+  }
+
+  if (deletes.length > 0) {
+    await admin
+      .from("influencer_rate_card")
+      .delete()
+      .eq("influencer_id", influencerId)
+      .in("deliverable_type", deletes);
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "influencer",
+    entity_id: influencerId,
+    action: "rate_card_updated",
+    metadata: { upsert: rows.length, delete: deletes.length },
+  });
+
+  revalidatePath(`/agency/influencers/${influencerId}`);
+  redirect(`/agency/influencers/${influencerId}?saved=1#rate-card`);
+}
+
+type ImportRow = {
+  display_name: string;
+  instagram_handle: string | null;
+  youtube_handle: string | null;
+  twitter_handle: string | null;
+  follower_count_total: number;
+  engagement_rate: number | null;
+  city: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  categories: string[];
+};
+
+export async function importInfluencersAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const rowsJson = String(formData.get("rows_json") ?? "").trim();
+  if (!rowsJson) redirect("/agency/influencers/import?error=empty_rows");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rowsJson);
+  } catch {
+    redirect("/agency/influencers/import?error=invalid_json");
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    redirect("/agency/influencers/import?error=empty_rows");
+  }
+
+  const rows = (parsed as ImportRow[]).slice(0, 1000);
+  const admin = createSupabaseAdminClient();
+
+  // Existing handles on this agency's roster (for dedupe).
+  const { data: existing } = await admin
+    .from("agency_influencer_roster")
+    .select("influencer_id, influencers!inner (instagram_handle)")
+    .eq("agency_id", user.agencyId);
+  const existingHandles = new Set(
+    (existing ?? [])
+      .map((r: { influencers?: { instagram_handle?: string | null } | { instagram_handle?: string | null }[] }) => {
+        const inf = Array.isArray(r.influencers) ? r.influencers[0] : r.influencers;
+        return inf?.instagram_handle ?? null;
+      })
+      .filter((h): h is string => !!h),
+  );
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const r of rows) {
+    const displayName = String(r.display_name ?? "").trim();
+    if (!displayName) {
+      skipped++;
+      continue;
+    }
+    const handle = r.instagram_handle
+      ? String(r.instagram_handle).trim().replace(/^@+/, "").toLowerCase()
+      : null;
+    if (handle && existingHandles.has(handle)) {
+      skipped++;
+      continue;
+    }
+
+    const { data: inf, error: infErr } = await admin
+      .from("influencers")
+      .insert({
+        display_name: displayName,
+        instagram_handle: handle,
+        youtube_handle: r.youtube_handle
+          ? String(r.youtube_handle).trim().replace(/^@+/, "").toLowerCase()
+          : null,
+        twitter_handle: r.twitter_handle
+          ? String(r.twitter_handle).trim().replace(/^@+/, "").toLowerCase()
+          : null,
+        follower_count_total: Number.isFinite(r.follower_count_total)
+          ? Math.max(0, Math.floor(r.follower_count_total))
+          : 0,
+        engagement_rate: Number.isFinite(r.engagement_rate)
+          ? r.engagement_rate
+          : null,
+        city: r.city ? String(r.city).trim() || null : null,
+        contact_email: r.contact_email
+          ? String(r.contact_email).trim().toLowerCase() || null
+          : null,
+        contact_phone: r.contact_phone
+          ? String(r.contact_phone).trim() || null
+          : null,
+        niches: Array.isArray(r.categories)
+          ? r.categories.map((c) => String(c).trim().toLowerCase()).slice(0, 20)
+          : [],
+      })
+      .select("id")
+      .single();
+
+    if (infErr || !inf) {
+      skipped++;
+      continue;
+    }
+
+    const { error: rosterErr } = await admin
+      .from("agency_influencer_roster")
+      .insert({
+        agency_id: user.agencyId,
+        influencer_id: inf.id,
+        added_by: user.id,
+      });
+    if (rosterErr) {
+      skipped++;
+      continue;
+    }
+
+    if (handle) existingHandles.add(handle);
+    inserted++;
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "agency_influencer_roster",
+    entity_id: user.agencyId,
+    action: "influencer_import",
+    metadata: { inserted, skipped, submitted: rows.length },
+  });
+
+  revalidatePath("/agency/influencers");
+  redirect(
+    `/agency/influencers?imported=${inserted}&skipped=${skipped}`,
+  );
 }

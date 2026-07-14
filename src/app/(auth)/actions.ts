@@ -338,6 +338,21 @@ export async function inviteInfluencerAction(formData: FormData) {
     );
   }
 
+  // Brand-approval gate: only invite creators the brand has approved on
+  // this campaign's shortlist. Prevents premature outreach.
+  const { data: shortlistItem } = await supabase
+    .from("campaign_shortlist_items")
+    .select("id, brand_decision")
+    .eq("campaign_id", campaignId)
+    .eq("influencer_id", influencerId)
+    .maybeSingle();
+
+  if (!shortlistItem || shortlistItem.brand_decision !== "approved") {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=not_brand_approved`,
+    );
+  }
+
   const offerAmountPaise = Math.round(offerAmount * 100);
 
   const { data: invitation, error } = await supabase
@@ -382,18 +397,27 @@ async function sendInvitationEmail(params: {
 }) {
   const admin = createSupabaseAdminClient();
 
+  // Left-join profiles: agency-created creators may have no auth account.
+  // Fall back to influencers.contact_email for delivery.
   const { data: ctx, error: ctxError } = await admin
     .from("campaign_invitations")
     .select(
       `id,
        campaign:campaigns!inner(name, brand:brands!inner(name)),
-       influencer:influencers!inner(profile:profiles!inner(email, full_name))`,
+       influencer:influencers!inner(
+         display_name, contact_email,
+         profile:profiles(email, full_name)
+       )`,
     )
     .eq("id", params.invitationId)
     .single<{
       id: string;
       campaign: { name: string; brand: { name: string } };
-      influencer: { profile: { email: string; full_name: string | null } };
+      influencer: {
+        display_name: string;
+        contact_email: string | null;
+        profile: { email: string; full_name: string | null } | null;
+      };
     }>();
 
   const { data: agency } = await admin
@@ -416,8 +440,21 @@ async function sendInvitationEmail(params: {
     return;
   }
 
+  const email = ctx.influencer.profile?.email ?? ctx.influencer.contact_email;
+  if (!email) {
+    await admin.from("audit_log").insert({
+      actor_profile_id: params.actorProfileId,
+      entity_type: "campaign_invitation",
+      entity_id: params.invitationId,
+      action: "invitation_email_failed",
+      metadata: { reason: "no_contact_email" },
+    });
+    return;
+  }
+
   const { subject, html, text } = buildInvitationEmail({
-    influencerName: ctx.influencer.profile.full_name ?? "there",
+    influencerName:
+      ctx.influencer.profile?.full_name ?? ctx.influencer.display_name ?? "there",
     agencyName: agency.name,
     brandName: ctx.campaign.brand.name,
     campaignName: ctx.campaign.name,
@@ -432,7 +469,7 @@ async function sendInvitationEmail(params: {
   });
 
   const result = await sendEmail({
-    to: ctx.influencer.profile.email,
+    to: email,
     subject,
     html,
     text,
@@ -444,7 +481,7 @@ async function sendInvitationEmail(params: {
     entity_id: params.invitationId,
     action: result.ok ? "invitation_email_sent" : "invitation_email_failed",
     metadata: result.ok
-      ? { provider: "resend", email_id: result.id, to: ctx.influencer.profile.email }
+      ? { provider: "resend", email_id: result.id, to: email }
       : { provider: "resend", reason: result.reason, error: result.message },
   });
 }
@@ -1371,4 +1408,418 @@ export async function importInfluencersAction(formData: FormData) {
   redirect(
     `/agency/influencers?imported=${inserted}&skipped=${skipped}`,
   );
+}
+
+// -----------------------------------------------------------------
+// Sprint 2: campaign shortlist (agency pitching influencers to brand)
+// -----------------------------------------------------------------
+
+const DELIVERABLE_TYPE_KEYS = [
+  "instagram_post",
+  "instagram_reel",
+  "instagram_story",
+  "youtube_video",
+  "youtube_short",
+  "twitter_post",
+  "blog_post",
+  "other",
+] as const;
+
+async function assertCampaignAgency(
+  campaignId: string,
+  agencyId: string,
+): Promise<boolean> {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("campaigns")
+    .select("id")
+    .eq("id", campaignId)
+    .eq("agency_id", agencyId)
+    .maybeSingle();
+  return !!data;
+}
+
+export async function addShortlistItemAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  const influencerId = String(formData.get("influencer_id") ?? "").trim();
+  if (!campaignId || !influencerId) {
+    redirect(`/agency/campaigns/${campaignId}?error=invalid_input`);
+  }
+  if (!(await assertCampaignAgency(campaignId, user.agencyId))) {
+    redirect("/agency/campaigns?error=campaign_not_found");
+  }
+
+  const admin = createSupabaseAdminClient();
+
+  // Verify roster membership.
+  const { data: roster } = await admin
+    .from("agency_influencer_roster")
+    .select("agency_id")
+    .eq("agency_id", user.agencyId)
+    .eq("influencer_id", influencerId)
+    .maybeSingle();
+  if (!roster) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=influencer_not_on_roster`,
+    );
+  }
+
+  // Autofill proposed_cost from the influencer's default rate card entry
+  // (instagram_post is a reasonable default; agency can override).
+  const { data: rateRow } = await admin
+    .from("influencer_rate_card")
+    .select("cost_inr_paise")
+    .eq("influencer_id", influencerId)
+    .eq("deliverable_type", "instagram_post")
+    .maybeSingle();
+
+  const cost = Number(rateRow?.cost_inr_paise ?? 0);
+  const suggestedBrandPrice = Math.round(cost * 1.3); // 30% margin default
+
+  const { error } = await admin.from("campaign_shortlist_items").insert({
+    campaign_id: campaignId,
+    influencer_id: influencerId,
+    proposed_cost_inr_paise: cost,
+    brand_price_inr_paise: suggestedBrandPrice,
+    deliverables: [{ type: "instagram_post", count: 1 }],
+  });
+
+  if (error) {
+    // 23505 = unique_violation → already on shortlist.
+    if ((error as { code?: string }).code === "23505") {
+      redirect(`/agency/campaigns/${campaignId}?error=already_shortlisted`);
+    }
+    redirect(
+      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "campaign",
+    entity_id: campaignId,
+    action: "shortlist_item_added",
+    metadata: { influencer_id: influencerId },
+  });
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  redirect(`/agency/campaigns/${campaignId}?shortlisted=1`);
+}
+
+export async function updateShortlistItemAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const itemId = String(formData.get("item_id") ?? "").trim();
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  const rationale = String(formData.get("rationale") ?? "").trim() || null;
+  const costRupees = Number(formData.get("proposed_cost_rupees") ?? 0);
+  const brandPriceRupees = Number(formData.get("brand_price_rupees") ?? 0);
+  const sampleUrlsRaw = String(formData.get("sample_urls") ?? "");
+
+  if (!itemId || !campaignId) {
+    redirect(`/agency/campaigns/${campaignId}?error=invalid_input`);
+  }
+  if (!(await assertCampaignAgency(campaignId, user.agencyId))) {
+    redirect("/agency/campaigns?error=campaign_not_found");
+  }
+
+  // Deliverables: parse rows[<type>]=<count>.
+  const deliverables: Array<{ type: string; count: number }> = [];
+  for (const t of DELIVERABLE_TYPE_KEYS) {
+    const raw = formData.get(`deliv_${t}`);
+    if (raw === null || String(raw).trim() === "") continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    deliverables.push({ type: t, count: Math.floor(n) });
+  }
+
+  const sampleUrls = sampleUrlsRaw
+    .split(/\s+|,/)
+    .map((s) => s.trim())
+    .filter((s) => /^https?:\/\//i.test(s))
+    .slice(0, 20);
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("campaign_shortlist_items")
+    .update({
+      rationale,
+      proposed_cost_inr_paise: Math.max(0, Math.round(costRupees * 100)),
+      brand_price_inr_paise: Math.max(0, Math.round(brandPriceRupees * 100)),
+      deliverables,
+      sample_urls: sampleUrls,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", itemId)
+    .eq("campaign_id", campaignId);
+
+  if (error) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  redirect(`/agency/campaigns/${campaignId}?item_saved=1`);
+}
+
+export async function removeShortlistItemAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const itemId = String(formData.get("item_id") ?? "").trim();
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  if (!itemId || !campaignId) {
+    redirect(`/agency/campaigns/${campaignId}?error=invalid_input`);
+  }
+  if (!(await assertCampaignAgency(campaignId, user.agencyId))) {
+    redirect("/agency/campaigns?error=campaign_not_found");
+  }
+
+  const admin = createSupabaseAdminClient();
+  await admin
+    .from("campaign_shortlist_items")
+    .delete()
+    .eq("id", itemId)
+    .eq("campaign_id", campaignId);
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  redirect(`/agency/campaigns/${campaignId}?item_removed=1`);
+}
+
+export async function sendPackageToBrandAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  if (!campaignId) redirect("/agency/campaigns?error=invalid_input");
+  if (!(await assertCampaignAgency(campaignId, user.agencyId))) {
+    redirect("/agency/campaigns?error=campaign_not_found");
+  }
+
+  const admin = createSupabaseAdminClient();
+
+  // Load campaign + brand + shortlist for snapshot.
+  const { data: camp } = await admin
+    .from("campaigns")
+    .select(
+      `id, name, brief, total_budget_inr_paise, start_date, end_date,
+       agencies ( name ),
+       brands ( name, contact_email )`,
+    )
+    .eq("id", campaignId)
+    .single();
+  if (!camp) redirect(`/agency/campaigns/${campaignId}?error=not_found`);
+
+  const brand: { name?: string; contact_email?: string } = Array.isArray(
+    (camp as { brands: unknown }).brands,
+  )
+    ? (((camp as { brands: unknown[] }).brands[0] ?? {}) as {
+        name?: string;
+        contact_email?: string;
+      })
+    : (((camp as { brands: unknown }).brands ?? {}) as {
+        name?: string;
+        contact_email?: string;
+      });
+  const agency: { name?: string } = Array.isArray((camp as { agencies: unknown }).agencies)
+    ? (((camp as { agencies: unknown[] }).agencies[0] ?? {}) as { name?: string })
+    : (((camp as { agencies: unknown }).agencies ?? {}) as { name?: string });
+
+  const { data: items } = await admin
+    .from("campaign_shortlist_items")
+    .select(
+      `id, rationale, proposed_cost_inr_paise, brand_price_inr_paise,
+       deliverables, sample_urls,
+       influencers!inner (
+         id, display_name, instagram_handle, youtube_handle,
+         follower_count_total, engagement_rate, city, niches, bio
+       )`,
+    )
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: true });
+
+  if (!items || items.length === 0) {
+    redirect(`/agency/campaigns/${campaignId}?error=empty_shortlist`);
+  }
+
+  // Determine next version number.
+  const { data: prev } = await admin
+    .from("package_versions")
+    .select("version_number")
+    .eq("campaign_id", campaignId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextVersion = (prev?.version_number ?? 0) + 1;
+
+  const snapshot = {
+    campaign: {
+      id: (camp as { id: string }).id,
+      name: (camp as { name: string }).name,
+      brief: (camp as { brief: string | null }).brief,
+      total_budget_inr_paise: (camp as { total_budget_inr_paise: number })
+        .total_budget_inr_paise,
+      start_date: (camp as { start_date: string | null }).start_date,
+      end_date: (camp as { end_date: string | null }).end_date,
+    },
+    agency: { name: agency.name ?? null },
+    brand: { name: brand.name ?? null },
+    items: items.map((it: unknown) => {
+      const row = it as {
+        id: string;
+        rationale: string | null;
+        proposed_cost_inr_paise: number;
+        brand_price_inr_paise: number;
+        deliverables: unknown;
+        sample_urls: string[];
+        influencers: unknown;
+      };
+      const inf = Array.isArray(row.influencers) ? row.influencers[0] : row.influencers;
+      return {
+        id: row.id,
+        rationale: row.rationale,
+        // Brand snapshot omits agency cost — only brand price is shown to brand.
+        brand_price_inr_paise: row.brand_price_inr_paise,
+        deliverables: row.deliverables,
+        sample_urls: row.sample_urls,
+        influencer: inf,
+      };
+    }),
+    snapshot_taken_at: new Date().toISOString(),
+  };
+
+  const { data: version, error: versionErr } = await admin
+    .from("package_versions")
+    .insert({
+      campaign_id: campaignId,
+      version_number: nextVersion,
+      sent_to_email: brand.contact_email ?? null,
+      sent_by_profile_id: user.id,
+      snapshot,
+    })
+    .select("id")
+    .single();
+
+  if (versionErr || !version) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(
+        versionErr?.message ?? "snapshot_failed",
+      )}`,
+    );
+  }
+
+  // Set campaign to pitching status.
+  await admin
+    .from("campaigns")
+    .update({ status: "pitching" })
+    .eq("id", campaignId);
+
+  // Email the brand with a signed package token.
+  if (brand.contact_email) {
+    const token = signToken({
+      kind: "package",
+      campaignId,
+      versionId: version.id,
+    });
+    const url = appUrl(`/p/package/${token}`);
+    const totalBrand = (items as unknown as Array<{ brand_price_inr_paise: number }>)
+      .reduce((sum, it) => sum + Number(it.brand_price_inr_paise ?? 0), 0);
+    const { subject, html, text } = buildPackageEmail({
+      brandName: brand.name ?? "there",
+      agencyName: agency.name ?? "the agency",
+      campaignName: (camp as { name: string }).name,
+      totalInr: formatPaiseAsINR(totalBrand),
+      packageUrl: url,
+      versionNumber: nextVersion,
+    });
+    const result = await sendEmail({
+      to: brand.contact_email,
+      subject,
+      html,
+      text,
+    });
+    await admin.from("audit_log").insert({
+      actor_profile_id: user.id,
+      entity_type: "package_version",
+      entity_id: version.id,
+      action: result.ok ? "package_sent" : "package_send_failed",
+      metadata: result.ok
+        ? {
+            provider: "resend",
+            email_id: result.id,
+            to: brand.contact_email,
+            version: nextVersion,
+          }
+        : {
+            provider: "resend",
+            reason: result.reason,
+            error: result.message,
+            version: nextVersion,
+          },
+    });
+  } else {
+    await admin.from("audit_log").insert({
+      actor_profile_id: user.id,
+      entity_type: "package_version",
+      entity_id: version.id,
+      action: "package_snapshot_no_email",
+      metadata: { version: nextVersion },
+    });
+  }
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  redirect(`/agency/campaigns/${campaignId}?package_sent=${nextVersion}`);
+}
+
+function buildPackageEmail(p: {
+  brandName: string;
+  agencyName: string;
+  campaignName: string;
+  totalInr: string;
+  packageUrl: string;
+  versionNumber: number;
+}) {
+  const subject = `${p.agencyName} sent you a campaign package — ${p.campaignName}`;
+  const html = `
+    <p>Hi ${escapeHtml(p.brandName)},</p>
+    <p><strong>${escapeHtml(p.agencyName)}</strong> has put together a proposal for
+    <strong>${escapeHtml(p.campaignName)}</strong>.</p>
+    <p>Total: <strong>${escapeHtml(p.totalInr)}</strong> · Version ${p.versionNumber}</p>
+    <p><a href="${p.packageUrl}">Review the package</a> — approve, reject,
+    or leave comments per creator.</p>
+    <p style="color:#666;font-size:12px">This link is unique to you. Do not forward.</p>
+  `;
+  const text = [
+    `Hi ${p.brandName},`,
+    `${p.agencyName} has sent you a campaign package — ${p.campaignName}.`,
+    `Total: ${p.totalInr} · Version ${p.versionNumber}`,
+    `Review: ${p.packageUrl}`,
+  ].join("\n\n");
+  return { subject, html, text };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

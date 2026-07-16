@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { formatPaiseAsINR } from "@/lib/money";
 import {
-  addShortlistItemAction,
+  addShortlistItemsBulkAction,
   updateShortlistItemAction,
   removeShortlistItemAction,
   sendPackageToBrandAction,
@@ -38,6 +38,7 @@ export default async function CampaignDetailPage({
     error?: string;
     updated?: string;
     shortlisted?: string;
+    shortlisted_bulk?: string;
     item_saved?: string;
     item_removed?: string;
     package_sent?: string;
@@ -174,6 +175,12 @@ export default async function CampaignDetailPage({
       )}
       {sp.updated && <SuccessBanner>Campaign updated.</SuccessBanner>}
       {sp.shortlisted && <SuccessBanner>Creator added to shortlist.</SuccessBanner>}
+      {sp.shortlisted_bulk && (
+        <SuccessBanner>
+          Added {sp.shortlisted_bulk} creator
+          {sp.shortlisted_bulk === "1" ? "" : "s"} to shortlist.
+        </SuccessBanner>
+      )}
       {sp.item_saved && <SuccessBanner>Shortlist item saved.</SuccessBanner>}
       {sp.item_removed && <MutedBanner>Removed from shortlist.</MutedBanner>}
       {sp.package_sent && (
@@ -362,27 +369,45 @@ export default async function CampaignDetailPage({
 
         {rosterAvailableForShortlist.length > 0 && (
           <form
-            action={addShortlistItemAction}
-            className="mt-4 flex items-end gap-3 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
+            action={addShortlistItemsBulkAction}
+            className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
           >
             <input type="hidden" name="campaign_id" value={campaignId} />
-            <label className="flex-1">
+            <div className="flex items-center justify-between">
               <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                Add creator from roster
+                Add creators from roster ({rosterAvailableForShortlist.length}{" "}
+                available)
               </span>
-              <select name="influencer_id" required className="input mt-1">
-                <option value="">— Choose —</option>
-                {rosterAvailableForShortlist.map((r: any) => (
-                  <option key={r.influencer_id} value={r.influencer_id}>
-                    {r.influencers?.display_name}
-                    {r.influencers?.instagram_handle
-                      ? ` (@${r.influencers.instagram_handle})`
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <SubmitButton pendingLabel="Adding…">Add to shortlist</SubmitButton>
+              <SubmitButton pendingLabel="Adding…">Add selected</SubmitButton>
+            </div>
+            <div className="mt-3 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+              {rosterAvailableForShortlist.map((r: any) => {
+                const inf = Array.isArray(r.influencers)
+                  ? r.influencers[0]
+                  : r.influencers;
+                return (
+                  <label
+                    key={r.influencer_id}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <input
+                      type="checkbox"
+                      name="influencer_id"
+                      value={r.influencer_id}
+                      className="h-4 w-4 rounded border-zinc-300"
+                    />
+                    <span className="truncate">
+                      {inf?.display_name}
+                      {inf?.instagram_handle && (
+                        <span className="ml-1 text-xs text-zinc-500">
+                          @{inf.instagram_handle}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </form>
         )}
 
@@ -464,6 +489,8 @@ function humanErr(code: string): string {
       return "Add at least one creator to the shortlist before sending.";
     case "invalid_status":
       return "That status isn't recognised.";
+    case "no_creators_selected":
+      return "Select at least one creator to add.";
     default:
       return decodeURIComponent(code);
   }

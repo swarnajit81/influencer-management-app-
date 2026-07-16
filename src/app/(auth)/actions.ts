@@ -857,6 +857,94 @@ export async function addShortlistItemAction(formData: FormData) {
   redirect(`/agency/campaigns/${campaignId}?shortlisted=1`);
 }
 
+export async function addShortlistItemsBulkAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  const ids = formData
+    .getAll("influencer_id")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+
+  if (!campaignId) redirect("/agency/campaigns?error=invalid_input");
+  if (ids.length === 0) {
+    redirect(`/agency/campaigns/${campaignId}?error=no_creators_selected`);
+  }
+  if (!(await assertCampaignAgency(campaignId, user.agencyId))) {
+    redirect("/agency/campaigns?error=campaign_not_found");
+  }
+
+  const admin = createSupabaseAdminClient();
+
+  // Restrict to roster members.
+  const { data: roster } = await admin
+    .from("agency_influencer_roster")
+    .select("influencer_id")
+    .eq("agency_id", user.agencyId)
+    .in("influencer_id", ids);
+  const rosterIds = new Set((roster ?? []).map((r) => r.influencer_id));
+  const validIds = ids.filter((id) => rosterIds.has(id));
+  if (validIds.length === 0) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=influencer_not_on_roster`,
+    );
+  }
+
+  // Rate card autofill: fetch instagram_post cost for each in one query.
+  const { data: rates } = await admin
+    .from("influencer_rate_card")
+    .select("influencer_id, cost_inr_paise")
+    .eq("deliverable_type", "instagram_post")
+    .in("influencer_id", validIds);
+  const rateByInfluencer = new Map<string, number>(
+    (rates ?? []).map((r) => [r.influencer_id, Number(r.cost_inr_paise ?? 0)]),
+  );
+
+  const rows = validIds.map((id) => {
+    const cost = rateByInfluencer.get(id) ?? 0;
+    return {
+      campaign_id: campaignId,
+      influencer_id: id,
+      proposed_cost_inr_paise: cost,
+      brand_price_inr_paise: Math.round(cost * 1.3),
+      deliverables: [{ type: "instagram_post", count: 1 }],
+    };
+  });
+
+  // Upsert with onConflict ignore-style: insert-only, existing rows skip.
+  // Supabase JS lacks direct ON CONFLICT DO NOTHING for insert(), so use
+  // upsert() with the unique key and ignoreDuplicates.
+  const { error } = await admin
+    .from("campaign_shortlist_items")
+    .upsert(rows, {
+      onConflict: "campaign_id,influencer_id",
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "campaign",
+    entity_id: campaignId,
+    action: "shortlist_bulk_added",
+    metadata: { influencer_ids: validIds, count: validIds.length },
+  });
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  redirect(
+    `/agency/campaigns/${campaignId}?shortlisted_bulk=${validIds.length}`,
+  );
+}
+
 export async function updateShortlistItemAction(formData: FormData) {
   const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
   const user = await getCurrentUser();

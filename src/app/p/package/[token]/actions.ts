@@ -73,6 +73,15 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
     metadata: { comment, campaign_id: payload.campaignId },
   });
 
+  await admin.from("package_events").insert({
+    campaign_id: payload.campaignId,
+    package_version_id: payload.versionId,
+    shortlist_item_id: itemId,
+    actor_kind: "brand",
+    event_type: decision === "approved" ? "item_approved" : "item_rejected",
+    metadata: comment ? { comment } : {},
+  });
+
   // If all items are decided and none pending, flip campaign to brand_approved.
   const { data: pending } = await admin
     .from("campaign_shortlist_items")
@@ -119,6 +128,14 @@ export async function brandRequestRevisionAction(formData: FormData) {
     entity_id: payload.campaignId,
     action: "brand_requested_revision",
     metadata: { note, package_version_id: payload.versionId },
+  });
+
+  await admin.from("package_events").insert({
+    campaign_id: payload.campaignId,
+    package_version_id: payload.versionId,
+    actor_kind: "brand",
+    event_type: "revision_requested",
+    metadata: note ? { note } : {},
   });
 
   revalidatePath(`/p/package/${token}`);

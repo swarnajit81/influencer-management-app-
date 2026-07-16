@@ -1164,6 +1164,19 @@ export async function sendPackageToBrandAction(formData: FormData) {
     .update({ status: "pitching" })
     .eq("id", campaignId);
 
+  await admin.from("package_events").insert({
+    campaign_id: campaignId,
+    package_version_id: version.id,
+    actor_kind: "agency",
+    actor_profile_id: user.id,
+    event_type: "package_sent",
+    metadata: {
+      version: nextVersion,
+      to: brand.contact_email ?? null,
+      item_count: items.length,
+    },
+  });
+
   // Email the brand with a signed package token.
   if (brand.contact_email) {
     const token = signToken({

@@ -8,7 +8,7 @@ export default async function AgencyDashboard() {
   const user = await requireAgencyMember();
   const supabase = await createSupabaseServerClient();
 
-  const [campaignsRes, shortlistRes, auditRes] = await Promise.all([
+  const [campaignsRes, shortlistRes, eventsRes] = await Promise.all([
     supabase
       .from("campaigns")
       .select("id, name, status, total_budget_inr_paise, created_at, brands ( name )")
@@ -23,15 +23,19 @@ export default async function AgencyDashboard() {
       )
       .eq("campaigns.agency_id", user.agencyId),
     supabase
-      .from("audit_log")
-      .select("id, action, entity_type, created_at")
-      .order("created_at", { ascending: false })
+      .from("package_events")
+      .select(
+        `id, actor_kind, event_type, occurred_at, metadata,
+         campaigns!inner ( id, name, agency_id )`,
+      )
+      .eq("campaigns.agency_id", user.agencyId)
+      .order("occurred_at", { ascending: false })
       .limit(15),
   ]);
 
   const campaigns = (campaignsRes.data ?? []) as any[];
   const shortlist = (shortlistRes.data ?? []) as any[];
-  const audit = (auditRes.data ?? []) as any[];
+  const events = (eventsRes.data ?? []) as any[];
 
   const pitchingCount = campaigns.filter((c) => c.status === "pitching").length;
   const approvedCount = campaigns.filter((c) => c.status === "brand_approved").length;
@@ -92,35 +96,74 @@ export default async function AgencyDashboard() {
       </section>
 
       <section>
-        <SectionHeader title="Recent activity" />
-        {audit.length === 0 ? (
-          <EmptyHint>No activity yet.</EmptyHint>
+        <SectionHeader title="Brand activity" />
+        {events.length === 0 ? (
+          <EmptyHint>
+            No brand activity yet. Send a package to start.
+          </EmptyHint>
         ) : (
-          <ul className="mt-3 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
-            {audit.map((a) => (
-              <li
-                key={a.id}
-                className="flex items-center justify-between gap-4 border-b border-zinc-100 py-2 last:border-b-0 dark:border-zinc-800"
-              >
-                <span className="truncate">
-                  <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] dark:bg-zinc-800">
-                    {a.action}
-                  </code>{" "}
-                  on {a.entity_type}
-                </span>
-                <span className="shrink-0 text-zinc-400">
-                  {new Date(a.created_at).toLocaleString("en-IN", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
-                </span>
-              </li>
-            ))}
+          <ul className="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+            {events.map((e) => {
+              const camp = Array.isArray(e.campaigns) ? e.campaigns[0] : e.campaigns;
+              return (
+                <li
+                  key={e.id}
+                  className="flex items-start justify-between gap-4 px-4 py-2"
+                >
+                  <div className="min-w-0 flex-1 truncate">
+                    <span
+                      className={`mr-2 inline-flex h-2 w-2 rounded-full align-middle ${
+                        e.actor_kind === "brand" ? "bg-blue-500" : "bg-zinc-400"
+                      }`}
+                      aria-hidden
+                    />
+                    <strong className="capitalize">{e.actor_kind}</strong>{" "}
+                    {EVENT_LABEL[e.event_type] ?? e.event_type}
+                    {camp && (
+                      <>
+                        {" on "}
+                        <Link
+                          href={`/agency/campaigns/${camp.id}`}
+                          className="underline"
+                        >
+                          {camp.name}
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-xs text-zinc-500">
+                    {relativeTime(new Date(e.occurred_at))}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
     </div>
   );
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  package_sent: "sent the package",
+  package_viewed: "viewed the package",
+  item_approved: "approved a creator",
+  item_rejected: "rejected a creator",
+  item_commented: "commented on a creator",
+  revision_requested: "requested a revision",
+};
+
+function relativeTime(then: Date): string {
+  const ms = Date.now() - then.getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return then.toLocaleDateString("en-IN", { dateStyle: "medium" });
 }
 
 function Stat({

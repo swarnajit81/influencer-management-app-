@@ -53,6 +53,29 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
     return <ErrorShell title="Package not found" body="This package version no longer exists." />;
   }
 
+  // Log a package_viewed event, throttled to once every 15 min per version so
+  // brand refreshes don't spam the agency dashboard.
+  {
+    const throttleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: recentView } = await admin
+      .from("package_events")
+      .select("id")
+      .eq("package_version_id", (version as any).id)
+      .eq("event_type", "package_viewed")
+      .gt("occurred_at", throttleCutoff)
+      .limit(1)
+      .maybeSingle();
+    if (!recentView) {
+      await admin.from("package_events").insert({
+        campaign_id: (version as any).campaign_id,
+        package_version_id: (version as any).id,
+        actor_kind: "brand",
+        event_type: "package_viewed",
+        metadata: {},
+      });
+    }
+  }
+
   // Live decisions per item (brand decisions are stored on the shortlist row,
   // not in the snapshot — so brand always sees their latest state).
   const { data: liveItems } = await admin

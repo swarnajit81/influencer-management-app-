@@ -111,6 +111,13 @@ export default async function CampaignDetailPage({
   const totalMargin = totalPrice - totalCost;
   const marginPct = totalPrice > 0 ? Math.round((totalMargin / totalPrice) * 100) : 0;
 
+  const { data: events } = await supabase
+    .from("package_events")
+    .select("id, actor_kind, event_type, occurred_at, metadata, shortlist_item_id")
+    .eq("campaign_id", campaignId)
+    .order("occurred_at", { ascending: false })
+    .limit(20);
+
   return (
     <div className="max-w-4xl">
       <Link
@@ -453,8 +460,74 @@ export default async function CampaignDetailPage({
         </section>
       )}
 
+      {events && events.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+            Brand activity
+          </h2>
+          <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+            {events.map((e: any) => (
+              <li key={e.id} className="flex items-start justify-between gap-4 px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex h-2 w-2 rounded-full ${
+                      e.actor_kind === "brand" ? "bg-blue-500" : "bg-zinc-400"
+                    }`}
+                    aria-hidden
+                  />
+                  <span>
+                    <strong className="capitalize">{e.actor_kind}</strong>{" "}
+                    {EVENT_LABEL[e.event_type] ?? e.event_type}
+                    {e.metadata?.comment && (
+                      <span className="ml-2 text-xs italic text-zinc-500">
+                        “{e.metadata.comment}”
+                      </span>
+                    )}
+                    {e.metadata?.note && (
+                      <span className="ml-2 text-xs italic text-zinc-500">
+                        “{e.metadata.note}”
+                      </span>
+                    )}
+                    {e.event_type === "package_sent" && e.metadata?.version && (
+                      <span className="ml-2 text-xs text-zinc-500">
+                        v{e.metadata.version}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <span className="shrink-0 text-xs text-zinc-500">
+                  {relativeTime(new Date(e.occurred_at))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
     </div>
   );
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  package_sent: "sent the package",
+  package_viewed: "viewed the package",
+  item_approved: "approved a creator",
+  item_rejected: "rejected a creator",
+  item_commented: "commented on a creator",
+  revision_requested: "requested a revision",
+};
+
+function relativeTime(then: Date): string {
+  const ms = Date.now() - then.getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return then.toLocaleDateString("en-IN", { dateStyle: "medium" });
 }
 
 function SuccessBanner({ children }: { children: React.ReactNode }) {

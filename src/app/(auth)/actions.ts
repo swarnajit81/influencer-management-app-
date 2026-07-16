@@ -1269,3 +1269,44 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// -----------------------------------------------------------------
+// Sprint 4: agency-side campaign messages
+// -----------------------------------------------------------------
+
+export async function postCampaignMessageAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  if (!campaignId || !body) {
+    redirect(`/agency/campaigns/${campaignId}?error=empty_message`);
+  }
+  if (body.length > 4000) {
+    redirect(`/agency/campaigns/${campaignId}?error=message_too_long`);
+  }
+  if (!(await assertCampaignAgency(campaignId, user.agencyId))) {
+    redirect("/agency/campaigns?error=campaign_not_found");
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.from("campaign_messages").insert({
+    campaign_id: campaignId,
+    sender_kind: "agency",
+    sender_profile_id: user.id,
+    body,
+  });
+
+  if (error) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  redirect(`/agency/campaigns/${campaignId}?message_sent=1#thread`);
+}

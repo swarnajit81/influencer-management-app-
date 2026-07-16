@@ -3,9 +3,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyToken, type VerifyResult } from "@/lib/tokens";
 import { formatPaiseAsINR } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
+import { MessageThread } from "@/components/MessageThread";
 import {
   brandDecideShortlistItemAction,
   brandRequestRevisionAction,
+  postBrandMessageAction,
 } from "./actions";
 
 const DELIVERABLE_LABEL: Record<string, string> = {
@@ -25,12 +27,13 @@ type PageProps = {
     error?: string;
     decided?: string;
     revision?: string;
+    message_sent?: string;
   }>;
 };
 
 export default async function BrandPackagePage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { error, decided, revision } = await searchParams;
+  const { error, decided, revision, message_sent } = await searchParams;
 
   const verified = verifyToken(token);
   if (!verified.ok) {
@@ -90,6 +93,25 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
     ]),
   );
 
+  const { data: messages } = await admin
+    .from("campaign_messages")
+    .select(
+      `id, sender_kind, body, created_at,
+       profiles:sender_profile_id ( full_name, email )`,
+    )
+    .eq("campaign_id", (version as any).campaign_id)
+    .is("shortlist_item_id", null)
+    .order("created_at", { ascending: true })
+    .limit(200);
+
+  const initialMessages = (messages ?? []).map((m: any) => ({
+    id: m.id,
+    sender_kind: m.sender_kind,
+    body: m.body,
+    created_at: m.created_at,
+    sender_name: m.profiles?.full_name ?? m.profiles?.email ?? null,
+  }));
+
   const snap = (version as any).snapshot as {
     campaign: {
       name: string;
@@ -137,6 +159,7 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
       {decided && (
         <Banner kind="success">Decision saved.</Banner>
       )}
+      {message_sent && <Banner kind="success">Message sent.</Banner>}
       {error && <Banner kind="error">{humanError(error)}</Banner>}
 
       <h1 className="text-2xl font-semibold">
@@ -330,6 +353,33 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
         })}
       </ul>
 
+      <section id="thread" className="mt-10">
+        <h2 className="text-lg font-semibold">Message the agency</h2>
+        <div className="mt-3">
+          <MessageThread
+            campaignId={(version as any).campaign_id}
+            packageToken={token}
+            viewerKind="brand"
+            initialMessages={initialMessages}
+          />
+        </div>
+        <form
+          action={postBrandMessageAction}
+          className="mt-3 flex items-start gap-2"
+        >
+          <input type="hidden" name="token" value={token} />
+          <textarea
+            name="body"
+            rows={2}
+            required
+            maxLength={4000}
+            placeholder="Write to the agency…"
+            className="input flex-1"
+          />
+          <SubmitButton pendingLabel="Sending…">Send</SubmitButton>
+        </form>
+      </section>
+
       <section className="mt-10 rounded-lg border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-900/50">
         <h2 className="text-sm font-semibold">Not happy with the mix?</h2>
         <p className="mt-1 text-xs text-zinc-500">
@@ -442,6 +492,10 @@ function humanError(code: string): string {
       return "Choose approve or reject.";
     case "item_not_found":
       return "That creator isn't part of this package.";
+    case "empty_message":
+      return "Type a message first.";
+    case "message_too_long":
+      return "Message must be under 4000 characters.";
     default:
       return decodeURIComponent(code);
   }

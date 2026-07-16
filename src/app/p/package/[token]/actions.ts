@@ -217,3 +217,55 @@ export async function brandRequestRevisionAction(formData: FormData) {
   revalidatePath(`/agency/campaigns/${payload.campaignId}`);
   redirect(`/p/package/${encodeURIComponent(token)}?revision=1`);
 }
+
+export async function postBrandMessageAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "").trim();
+  if (!token) redirect("/");
+  const payload = verify(token);
+
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) {
+    redirect(`/p/package/${encodeURIComponent(token)}?error=empty_message`);
+  }
+  if (body.length > 4000) {
+    redirect(`/p/package/${encodeURIComponent(token)}?error=message_too_long`);
+  }
+
+  const admin = createSupabaseAdminClient();
+  const ctx = await loadBrandContext(payload.campaignId);
+  const brandProfileId = ctx
+    ? await ensureBrandProfile({
+        brandId: ctx.brand.id,
+        contactEmail: ctx.brand.contact_email,
+        brandName: ctx.brand.name,
+      })
+    : null;
+
+  const { error } = await admin.from("campaign_messages").insert({
+    campaign_id: payload.campaignId,
+    sender_kind: "brand",
+    sender_profile_id: brandProfileId,
+    body,
+  });
+
+  if (error) {
+    redirect(
+      `/p/package/${encodeURIComponent(token)}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  if (ctx) {
+    await notifyAgencyOfBrandAction({
+      agencyId: ctx.agencyId,
+      campaignId: ctx.campaignId,
+      campaignName: ctx.campaignName,
+      brandName: ctx.brand.name,
+      actionLabel: "sent a message",
+      detail: body.length > 200 ? `${body.slice(0, 200)}…` : body,
+    });
+  }
+
+  revalidatePath(`/p/package/${token}`);
+  revalidatePath(`/agency/campaigns/${payload.campaignId}`);
+  redirect(`/p/package/${encodeURIComponent(token)}?message_sent=1#thread`);
+}

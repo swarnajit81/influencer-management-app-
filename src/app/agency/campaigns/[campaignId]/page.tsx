@@ -9,8 +9,10 @@ import {
   removeShortlistItemAction,
   sendPackageToBrandAction,
   setCampaignStatusAction,
+  postCampaignMessageAction,
 } from "@/app/(auth)/actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { MessageThread } from "@/components/MessageThread";
 
 const DELIVERABLE_TYPES: Array<{ key: string; label: string }> = [
   { key: "instagram_post", label: "IG post" },
@@ -43,6 +45,8 @@ export default async function CampaignDetailPage({
     item_removed?: string;
     package_sent?: string;
     status_set?: string;
+    message_sent?: string;
+    empty_message?: string;
   }>;
 }) {
   const { campaignId } = await params;
@@ -110,6 +114,25 @@ export default async function CampaignDetailPage({
   );
   const totalMargin = totalPrice - totalCost;
   const marginPct = totalPrice > 0 ? Math.round((totalMargin / totalPrice) * 100) : 0;
+
+  const { data: messages } = await supabase
+    .from("campaign_messages")
+    .select(
+      `id, sender_kind, body, created_at,
+       profiles:sender_profile_id ( full_name, email )`,
+    )
+    .eq("campaign_id", campaignId)
+    .is("shortlist_item_id", null)
+    .order("created_at", { ascending: true })
+    .limit(200);
+
+  const initialMessages = (messages ?? []).map((m: any) => ({
+    id: m.id,
+    sender_kind: m.sender_kind,
+    body: m.body,
+    created_at: m.created_at,
+    sender_name: m.profiles?.full_name ?? m.profiles?.email ?? null,
+  }));
 
   const { data: events } = await supabase
     .from("package_events")
@@ -196,6 +219,7 @@ export default async function CampaignDetailPage({
       {sp.status_set && (
         <SuccessBanner>Campaign moved to {sp.status_set.replace("_", " ")}.</SuccessBanner>
       )}
+      {sp.message_sent && <SuccessBanner>Message sent.</SuccessBanner>}
 
       {/* Shortlist */}
       <section className="mb-8">
@@ -460,6 +484,30 @@ export default async function CampaignDetailPage({
         </section>
       )}
 
+      <section id="thread" className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold">Conversation with brand</h2>
+        <MessageThread
+          campaignId={campaignId}
+          viewerKind="agency"
+          initialMessages={initialMessages}
+        />
+        <form
+          action={postCampaignMessageAction}
+          className="mt-3 flex items-start gap-2"
+        >
+          <input type="hidden" name="campaign_id" value={campaignId} />
+          <textarea
+            name="body"
+            rows={2}
+            required
+            maxLength={4000}
+            placeholder="Reply to the brand…"
+            className="input flex-1"
+          />
+          <SubmitButton pendingLabel="Sending…">Send</SubmitButton>
+        </form>
+      </section>
+
       {events && events.length > 0 && (
         <section className="mb-8">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
@@ -564,6 +612,10 @@ function humanErr(code: string): string {
       return "That status isn't recognised.";
     case "no_creators_selected":
       return "Select at least one creator to add.";
+    case "empty_message":
+      return "Type a message first.";
+    case "message_too_long":
+      return "Message must be under 4000 characters.";
     default:
       return decodeURIComponent(code);
   }

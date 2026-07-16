@@ -4,6 +4,40 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyToken } from "@/lib/tokens";
+import { ensureBrandProfile } from "@/lib/brand/ensureBrandProfile";
+import { notifyAgencyOfBrandAction } from "@/lib/email/agencyNotify";
+
+// Load campaign + brand context needed to auto-provision a brand profile and
+// notify the agency. Returns null if the campaign is missing.
+async function loadBrandContext(campaignId: string) {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("campaigns")
+    .select(
+      `id, name, agency_id,
+       brands!inner ( id, name, contact_email )`,
+    )
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (!data) return null;
+  const brand = Array.isArray((data as { brands: unknown }).brands)
+    ? ((data as { brands: unknown[] }).brands[0] as {
+        id: string;
+        name: string;
+        contact_email: string;
+      })
+    : ((data as { brands: unknown }).brands as {
+        id: string;
+        name: string;
+        contact_email: string;
+      });
+  return {
+    campaignId: (data as { id: string }).id,
+    campaignName: (data as { name: string }).name,
+    agencyId: (data as { agency_id: string }).agency_id,
+    brand,
+  };
+}
 
 function verify(token: string) {
   const v = verifyToken(token);
@@ -49,6 +83,15 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
   }
 
   const admin = createSupabaseAdminClient();
+  const ctx = await loadBrandContext(payload.campaignId);
+  const brandProfileId = ctx
+    ? await ensureBrandProfile({
+        brandId: ctx.brand.id,
+        contactEmail: ctx.brand.contact_email,
+        brandName: ctx.brand.name,
+      })
+    : null;
+
   const { error } = await admin
     .from("campaign_shortlist_items")
     .update({
@@ -66,7 +109,7 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
   }
 
   await admin.from("audit_log").insert({
-    actor_profile_id: null,
+    actor_profile_id: brandProfileId,
     entity_type: "campaign_shortlist_item",
     entity_id: itemId,
     action: `brand_${decision}`,
@@ -78,6 +121,7 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
     package_version_id: payload.versionId,
     shortlist_item_id: itemId,
     actor_kind: "brand",
+    actor_profile_id: brandProfileId,
     event_type: decision === "approved" ? "item_approved" : "item_rejected",
     metadata: comment ? { comment } : {},
   });
@@ -104,6 +148,17 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
     }
   }
 
+  if (ctx) {
+    await notifyAgencyOfBrandAction({
+      agencyId: ctx.agencyId,
+      campaignId: ctx.campaignId,
+      campaignName: ctx.campaignName,
+      brandName: ctx.brand.name,
+      actionLabel: decision === "approved" ? "approved a creator" : "rejected a creator",
+      detail: comment,
+    });
+  }
+
   revalidatePath(`/p/package/${token}`);
   revalidatePath(`/agency/campaigns/${payload.campaignId}`);
   redirect(`/p/package/${encodeURIComponent(token)}?decided=${itemId}`);
@@ -116,6 +171,14 @@ export async function brandRequestRevisionAction(formData: FormData) {
 
   const note = String(formData.get("note") ?? "").trim() || null;
   const admin = createSupabaseAdminClient();
+  const ctx = await loadBrandContext(payload.campaignId);
+  const brandProfileId = ctx
+    ? await ensureBrandProfile({
+        brandId: ctx.brand.id,
+        contactEmail: ctx.brand.contact_email,
+        brandName: ctx.brand.name,
+      })
+    : null;
 
   await admin
     .from("campaigns")
@@ -123,7 +186,7 @@ export async function brandRequestRevisionAction(formData: FormData) {
     .eq("id", payload.campaignId);
 
   await admin.from("audit_log").insert({
-    actor_profile_id: null,
+    actor_profile_id: brandProfileId,
     entity_type: "campaign",
     entity_id: payload.campaignId,
     action: "brand_requested_revision",
@@ -134,9 +197,21 @@ export async function brandRequestRevisionAction(formData: FormData) {
     campaign_id: payload.campaignId,
     package_version_id: payload.versionId,
     actor_kind: "brand",
+    actor_profile_id: brandProfileId,
     event_type: "revision_requested",
     metadata: note ? { note } : {},
   });
+
+  if (ctx) {
+    await notifyAgencyOfBrandAction({
+      agencyId: ctx.agencyId,
+      campaignId: ctx.campaignId,
+      campaignName: ctx.campaignName,
+      brandName: ctx.brand.name,
+      actionLabel: "requested a revision",
+      detail: note,
+    });
+  }
 
   revalidatePath(`/p/package/${token}`);
   revalidatePath(`/agency/campaigns/${payload.campaignId}`);

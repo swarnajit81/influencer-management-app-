@@ -131,7 +131,12 @@
       "Bash(curl *)",
       "Bash(wait)",
       "Bash(xargs kill *)",
-      "Bash(kill 63827)"
+      "Bash(kill 63827)",
+      "Bash(kill 65583 65649)",
+      "Bash(kill -9 65649)",
+      "Bash(grep -oE '\\\\$ACTION_ID_[a-f0-9]+')",
+      "Bash(grep -oE 'name=\"\\\\$ACTION_ID_[a-f0-9]+\"' /tmp/detail.html)",
+      "Bash(grep -B1 -A1 '\\\\$ACTION_ID' /tmp/detail.html)"
     ]
   }
 }

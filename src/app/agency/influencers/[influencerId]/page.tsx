@@ -4,13 +4,11 @@ import { notFound } from "next/navigation";
 import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
-  updateInfluencerBankAction,
   updateInfluencerProfileAction,
   removeInfluencerFromRosterAction,
   saveRateCardAction,
 } from "@/app/(auth)/actions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { formatPaiseAsINR } from "@/lib/money";
 
 type PageProps = {
   params: Promise<{ influencerId: string }>;
@@ -43,8 +41,6 @@ export default async function InfluencerDetailPage({ params, searchParams }: Pag
          primary_platform, follower_count_total, engagement_rate,
          bio, notes, city, state, contact_email, contact_phone,
          niches, portfolio_urls,
-         bank_account_number, bank_ifsc, bank_account_holder_name, pan, gstin,
-         razorpay_contact_id, razorpay_fund_account_id,
          profiles ( email, full_name )
        )`,
     )
@@ -66,21 +62,6 @@ export default async function InfluencerDetailPage({ params, searchParams }: Pag
   const rateMap = new Map<string, number>(
     (rateCardRows ?? []).map((row: any) => [row.deliverable_type, row.cost_inr_paise]),
   );
-
-  const { data: payouts } = await supabase
-    .from("payouts")
-    .select(
-      `id, status, amount_inr_paise, created_at, razorpay_payout_id, failure_reason,
-       contracts!inner ( campaigns!inner ( name, agency_id ) )`,
-    )
-    .eq("influencer_id", influencerId)
-    .eq("contracts.campaigns.agency_id", user.agencyId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  const accountMasked = inf.bank_account_number
-    ? `••• ${String(inf.bank_account_number).slice(-4)}`
-    : "Not set";
 
   return (
     <div className="space-y-8">
@@ -317,105 +298,6 @@ export default async function InfluencerDetailPage({ params, searchParams }: Pag
         </form>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-base font-semibold">Bank details for payouts</h2>
-          <span className="text-xs text-zinc-500">
-            {inf.razorpay_fund_account_id ? "Razorpay fund account ready" : "Not yet linked to Razorpay"}
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-zinc-500">
-          Required before any payout can be sent. Razorpay Route handles GST / TDS on Indian payouts.
-        </p>
-        <form action={updateInfluencerBankAction} className="mt-4 grid gap-4 sm:grid-cols-2">
-          <input type="hidden" name="influencer_id" value={inf.id} />
-          <Field label={`Account number (currently ${accountMasked})`}>
-            <input
-              type="text"
-              name="bank_account_number"
-              defaultValue={inf.bank_account_number ?? ""}
-              className="input"
-              maxLength={20}
-            />
-          </Field>
-          <Field label="IFSC">
-            <input
-              type="text"
-              name="bank_ifsc"
-              defaultValue={inf.bank_ifsc ?? ""}
-              className="input"
-              maxLength={11}
-              placeholder="HDFC0001234"
-            />
-          </Field>
-          <Field label="Account holder name" className="sm:col-span-2">
-            <input
-              type="text"
-              name="bank_account_holder_name"
-              defaultValue={inf.bank_account_holder_name ?? ""}
-              className="input"
-            />
-          </Field>
-          <Field label="PAN">
-            <input
-              type="text"
-              name="pan"
-              defaultValue={inf.pan ?? ""}
-              className="input"
-              maxLength={10}
-            />
-          </Field>
-          <Field label="GSTIN (optional)">
-            <input
-              type="text"
-              name="gstin"
-              defaultValue={inf.gstin ?? ""}
-              className="input"
-              maxLength={15}
-            />
-          </Field>
-          <div className="sm:col-span-2">
-            <SubmitButton pendingLabel="Saving…">Save bank details</SubmitButton>
-          </div>
-        </form>
-      </section>
-
-      <section>
-        <h2 className="text-base font-semibold">Payout history</h2>
-        {!payouts || payouts.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">No payouts yet.</p>
-        ) : (
-          <ul className="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-            {payouts.map((p: any) => {
-              const camp = Array.isArray(p.contracts?.campaigns)
-                ? p.contracts.campaigns[0]
-                : p.contracts?.campaigns;
-              return (
-                <li key={p.id} className="px-4 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{camp?.name ?? "Campaign"}</div>
-                      <div className="text-xs text-zinc-500">
-                        {new Date(p.created_at).toLocaleString("en-IN", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{formatPaiseAsINR(p.amount_inr_paise)}</div>
-                      <div className="text-xs text-zinc-500">{p.status}</div>
-                    </div>
-                  </div>
-                  {p.failure_reason && (
-                    <p className="mt-1 text-xs text-red-600">{p.failure_reason}</p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

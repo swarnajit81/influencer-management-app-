@@ -115,17 +115,16 @@ ok(settings.status === 200 && /Agency settings/.test(settings.body), "settings p
 // ---------- 3. edge: unauth redirect ----------
 const savedJar = { ...cookies };
 cookies = {};
-const noauth = await get("/agency/payouts");
-ok(noauth.status === 307 && /\/login/.test(noauth.loc || ""), "unauth /agency/payouts -> /login");
+const noauth = await get("/agency/campaigns");
+ok(noauth.status === 307 && /\/login/.test(noauth.loc || ""), "unauth /agency/campaigns -> /login");
 cookies = savedJar;
 
 console.log(`\n---- session + render checks: ${PASS} pass, ${FAIL} fail ----`);
 
-// ---------- 4. edge cases on public token surface (no cookie needed) ----------
-const forged = await get("/p/invitation/forged.token");
-ok(/isn't valid|not valid/i.test(forged.body), "forged invitation token rejected");
+// ---------- 4. edge cases on public package token surface ----------
+const forged = await get("/p/package/forged.token");
+ok(/isn't valid|not valid/i.test(forged.body), "forged package token rejected");
 
-// Build signed tokens locally to test more edges.
 const TOKEN_KEY = env.TOKEN_SIGNING_SECRET ?? "";
 function b64url(buf) {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -137,37 +136,25 @@ function makeToken(payload) {
 }
 
 if (TOKEN_KEY) {
-  // Expired token — exp already passed.
   const expired = makeToken({
-    kind: "invitation",
-    invitationId: "00000000-0000-0000-0000-000000000000",
+    kind: "package",
+    campaignId: "00000000-0000-0000-0000-000000000000",
+    versionId: "00000000-0000-0000-0000-000000000000",
     exp: Math.floor(Date.now() / 1000) - 60,
   });
-  const expiredRes = await get(`/p/invitation/${encodeURIComponent(expired)}`);
-  ok(/expired/i.test(expiredRes.body), "expired invitation token shows expired message");
+  const expiredRes = await get(`/p/package/${encodeURIComponent(expired)}`);
+  ok(/expired/i.test(expiredRes.body), "expired package token shows expired message");
 
-  // Wrong kind — contract token used on invitation route.
-  const wrongKind = makeToken({
-    kind: "contract",
-    contractId: "00000000-0000-0000-0000-000000000000",
+  const missing = makeToken({
+    kind: "package",
+    campaignId: "00000000-0000-0000-0000-000000000000",
+    versionId: "00000000-0000-0000-0000-000000000000",
     exp: Math.floor(Date.now() / 1000) + 60,
   });
-  const wrongRes = await get(`/p/invitation/${encodeURIComponent(wrongKind)}`);
+  const missingRes = await get(`/p/package/${encodeURIComponent(missing)}`);
   ok(
-    /isn't an invitation link|Link not recognised/i.test(wrongRes.body),
-    "wrong-kind token rejected on invitation route",
-  );
-
-  // Contract-token verifier on contract page with unknown ID → contract not found.
-  const missingContract = makeToken({
-    kind: "contract",
-    contractId: "00000000-0000-0000-0000-000000000000",
-    exp: Math.floor(Date.now() / 1000) + 60,
-  });
-  const missingRes = await get(`/p/contract/${encodeURIComponent(missingContract)}`);
-  ok(
-    /Contract not found/.test(missingRes.body),
-    "valid contract token with unknown id → not found",
+    /Package not found/.test(missingRes.body),
+    "valid package token with unknown id -> not found",
   );
 } else {
   console.log("  SKIP  token edge tests (TOKEN_SIGNING_SECRET missing)");

@@ -4,7 +4,6 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAgencyMember } from "@/lib/auth/getCurrentUser";
 import { formatPaiseAsINR } from "@/lib/money";
 import {
-  inviteInfluencerAction,
   addShortlistItemAction,
   updateShortlistItemAction,
   removeShortlistItemAction,
@@ -36,7 +35,6 @@ export default async function CampaignDetailPage({
   params: Promise<{ campaignId: string }>;
   searchParams: Promise<{
     error?: string;
-    invited?: string;
     updated?: string;
     shortlisted?: string;
     item_saved?: string;
@@ -82,16 +80,6 @@ export default async function CampaignDetailPage({
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: true });
 
-  const { data: invitations } = await supabase
-    .from("campaign_invitations")
-    .select(
-      `id, status, offer_amount_inr_paise, responded_at,
-       influencers (id, display_name, instagram_handle),
-       contracts (id, status)`,
-    )
-    .eq("campaign_id", campaignId)
-    .order("created_at", { ascending: false });
-
   const { data: roster } = await supabase
     .from("agency_influencer_roster")
     .select("influencer_id, influencers (id, display_name, instagram_handle)")
@@ -104,15 +92,9 @@ export default async function CampaignDetailPage({
     .order("version_number", { ascending: false });
 
   const shortlistedIds = new Set((shortlist ?? []).map((s: any) => s.influencers?.id));
-  const invitedIds = new Set((invitations ?? []).map((i: any) => i.influencers?.id));
 
   const rosterAvailableForShortlist = (roster ?? []).filter(
     (r: any) => !shortlistedIds.has(r.influencer_id),
-  );
-
-  // Approved items not yet invited — these are the ones we can send a contract to.
-  const approvedNotInvited = (shortlist ?? []).filter(
-    (s: any) => s.brand_decision === "approved" && !invitedIds.has(s.influencers?.id),
   );
 
   const totalCost = (shortlist ?? []).reduce(
@@ -186,7 +168,6 @@ export default async function CampaignDetailPage({
           {humanErr(sp.error)}
         </div>
       )}
-      {sp.invited && <SuccessBanner>Invitation sent.</SuccessBanner>}
       {sp.updated && <SuccessBanner>Campaign updated.</SuccessBanner>}
       {sp.shortlisted && <SuccessBanner>Creator added to shortlist.</SuccessBanner>}
       {sp.item_saved && <SuccessBanner>Shortlist item saved.</SuccessBanner>}
@@ -440,111 +421,6 @@ export default async function CampaignDetailPage({
         </section>
       )}
 
-      {/* Invitations */}
-      <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold">Invitations & contracts</h2>
-
-        {invitations && invitations.length > 0 ? (
-          <div className="space-y-3">
-            {invitations.map((inv: any) => {
-              const contract = Array.isArray(inv.contracts)
-                ? inv.contracts[0]
-                : inv.contracts;
-              return (
-                <div
-                  key={inv.id}
-                  className="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
-                >
-                  <div>
-                    <p className="font-medium">{inv.influencers?.display_name}</p>
-                    <p className="text-sm text-zinc-500">
-                      @{inv.influencers?.instagram_handle}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="font-semibold">
-                        {formatPaiseAsINR(inv.offer_amount_inr_paise)}
-                      </p>
-                      <p className="text-xs text-zinc-500">{inv.status}</p>
-                    </div>
-                    {contract?.id && (
-                      <Link
-                        href={`/agency/contracts/${contract.id}`}
-                        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                      >
-                        Manage →
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-zinc-500">
-            No invitations yet. Send the package first, then invite the creators the
-            brand approves.
-          </p>
-        )}
-      </section>
-
-      {approvedNotInvited.length > 0 && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-          <h3 className="mb-1 font-semibold text-emerald-900 dark:text-emerald-200">
-            Invite brand-approved creators
-          </h3>
-          <p className="mb-4 text-xs text-emerald-800 dark:text-emerald-300">
-            Only creators the brand has approved show up here.
-          </p>
-          <form action={inviteInfluencerAction} className="space-y-4">
-            <input type="hidden" name="campaign_id" value={campaignId} />
-
-            <label className="block">
-              <span className="text-sm font-medium">Creator</span>
-              <select name="influencer_id" className="input mt-1" required>
-                <option value="">— Select a creator —</option>
-                {approvedNotInvited.map((s: any) => {
-                  const inf = Array.isArray(s.influencers) ? s.influencers[0] : s.influencers;
-                  const suggestedPrice = Math.round(
-                    Number(s.brand_price_inr_paise ?? 0) / 100,
-                  );
-                  return (
-                    <option key={inf?.id} value={inf?.id}>
-                      {inf?.display_name}
-                      {inf?.instagram_handle ? ` (@${inf.instagram_handle})` : ""}
-                      {" — suggested ₹"}
-                      {suggestedPrice.toLocaleString("en-IN")}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">Offer amount to creator (₹)</span>
-              <input
-                name="offer_amount_rupees"
-                type="number"
-                step="100"
-                min="0"
-                className="input mt-1"
-                required
-              />
-              <p className="mt-1 text-xs text-zinc-500">
-                Use the creator&apos;s cost from the shortlist (not the brand price).
-              </p>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">Message (optional)</span>
-              <textarea name="offer_message" rows={3} className="input mt-1" />
-            </label>
-
-            <SubmitButton pendingLabel="Sending…">Send invitation</SubmitButton>
-          </form>
-        </div>
-      )}
     </div>
   );
 }
@@ -575,8 +451,6 @@ function humanErr(code: string): string {
       return "Missing or invalid input.";
     case "empty_shortlist":
       return "Add at least one creator to the shortlist before sending.";
-    case "not_brand_approved":
-      return "Only brand-approved creators can be invited.";
     default:
       return decodeURIComponent(code);
   }

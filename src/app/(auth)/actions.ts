@@ -229,6 +229,76 @@ export async function updateCampaignAction(formData: FormData) {
   redirect(`/agency/campaigns/${campaignId}?updated=1`);
 }
 
+// Allowed campaign status transitions. Enforced server-side so the UI
+// buttons can't drive the campaign into a state that skips a stage.
+const CAMPAIGN_TRANSITIONS: Record<string, readonly string[]> = {
+  draft: ["pitching", "cancelled"],
+  pitching: ["draft", "brand_approved", "cancelled"],
+  brand_approved: ["active", "pitching", "cancelled"],
+  active: ["completed", "cancelled"],
+  completed: [],
+  cancelled: [],
+};
+
+export async function setCampaignStatusAction(formData: FormData) {
+  const { getCurrentUser } = await import("@/lib/auth/getCurrentUser");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "agency_member" || !user.agencyId) {
+    redirect("/login");
+  }
+
+  const campaignId = String(formData.get("campaign_id") ?? "").trim();
+  const target = String(formData.get("target_status") ?? "").trim();
+  if (!campaignId || !target) {
+    redirect(`/agency/campaigns/${campaignId}?error=invalid_input`);
+  }
+  if (!(CAMPAIGN_STATUSES as readonly string[]).includes(target)) {
+    redirect(`/agency/campaigns/${campaignId}?error=invalid_status`);
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: campaign } = await supabase
+    .from("campaigns")
+    .select("id, status")
+    .eq("id", campaignId)
+    .eq("agency_id", user.agencyId)
+    .single();
+
+  if (!campaign) redirect("/agency/campaigns?error=campaign_not_found");
+
+  const allowed = CAMPAIGN_TRANSITIONS[campaign.status] ?? [];
+  if (!allowed.includes(target)) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=illegal_transition_${campaign.status}_to_${target}`,
+    );
+  }
+
+  const { error } = await supabase
+    .from("campaigns")
+    .update({ status: target })
+    .eq("id", campaignId)
+    .eq("agency_id", user.agencyId);
+
+  if (error) {
+    redirect(
+      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  const admin = createSupabaseAdminClient();
+  await admin.from("audit_log").insert({
+    actor_profile_id: user.id,
+    entity_type: "campaign",
+    entity_id: campaignId,
+    action: `campaign_status_${target}`,
+    metadata: { from: campaign.status, to: target },
+  });
+
+  revalidatePath(`/agency/campaigns/${campaignId}`);
+  revalidatePath("/agency/campaigns");
+  redirect(`/agency/campaigns/${campaignId}?status_set=${target}`);
+}
+
 
 // -----------------------------------------------------------------
 // Roster management (Sprint 1): agency-owned influencer records

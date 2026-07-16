@@ -8,6 +8,7 @@ import {
   updateShortlistItemAction,
   removeShortlistItemAction,
   sendPackageToBrandAction,
+  setCampaignStatusAction,
 } from "@/app/(auth)/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -40,6 +41,7 @@ export default async function CampaignDetailPage({
     item_saved?: string;
     item_removed?: string;
     package_sent?: string;
+    status_set?: string;
   }>;
 }) {
   const { campaignId } = await params;
@@ -161,6 +163,8 @@ export default async function CampaignDetailPage({
             <p className="mt-1 text-sm">{campaign.end_date || "–"}</p>
           </div>
         </div>
+
+        <LifecycleControls status={campaign.status} campaignId={campaignId} />
       </div>
 
       {sp.error && (
@@ -174,6 +178,9 @@ export default async function CampaignDetailPage({
       {sp.item_removed && <MutedBanner>Removed from shortlist.</MutedBanner>}
       {sp.package_sent && (
         <SuccessBanner>Package version {sp.package_sent} sent to brand.</SuccessBanner>
+      )}
+      {sp.status_set && (
+        <SuccessBanner>Campaign moved to {sp.status_set.replace("_", " ")}.</SuccessBanner>
       )}
 
       {/* Shortlist */}
@@ -442,6 +449,10 @@ function MutedBanner({ children }: { children: React.ReactNode }) {
 }
 
 function humanErr(code: string): string {
+  if (code.startsWith("illegal_transition_")) {
+    const [, from, , to] = code.split("_");
+    return `Can't move a campaign from ${from} to ${to}.`;
+  }
   switch (code) {
     case "already_shortlisted":
       return "That creator is already on the shortlist.";
@@ -451,7 +462,59 @@ function humanErr(code: string): string {
       return "Missing or invalid input.";
     case "empty_shortlist":
       return "Add at least one creator to the shortlist before sending.";
+    case "invalid_status":
+      return "That status isn't recognised.";
     default:
       return decodeURIComponent(code);
   }
+}
+
+const NEXT_STEP_LABEL: Record<string, { label: string; variant?: "primary" | "success" }> = {
+  active: { label: "Mark live", variant: "success" },
+  completed: { label: "Mark completed", variant: "primary" },
+  brand_approved: { label: "Mark brand approved" },
+  pitching: { label: "Move back to pitching" },
+};
+
+function LifecycleControls({
+  status,
+  campaignId,
+}: {
+  status: string;
+  campaignId: string;
+}) {
+  const transitions: Record<string, readonly string[]> = {
+    draft: ["pitching", "cancelled"],
+    pitching: ["draft", "brand_approved", "cancelled"],
+    brand_approved: ["active", "pitching", "cancelled"],
+    active: ["completed", "cancelled"],
+    completed: [],
+    cancelled: [],
+  };
+  const options = transitions[status] ?? [];
+  if (options.length === 0) return null;
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <span className="text-xs uppercase tracking-wide text-zinc-500">Next step</span>
+      {options.map((next) => {
+        const meta = NEXT_STEP_LABEL[next];
+        const variant =
+          next === "cancelled" ? "danger" : (meta?.variant ?? "secondary");
+        const label = meta?.label ?? `Set ${next.replace("_", " ")}`;
+        return (
+          <form key={next} action={setCampaignStatusAction}>
+            <input type="hidden" name="campaign_id" value={campaignId} />
+            <input type="hidden" name="target_status" value={next} />
+            <SubmitButton
+              variant={variant}
+              className="!px-3 !py-1.5 !text-xs"
+              pendingLabel="Saving…"
+            >
+              {next === "cancelled" ? "Cancel campaign" : label}
+            </SubmitButton>
+          </form>
+        );
+      })}
+    </div>
+  );
 }

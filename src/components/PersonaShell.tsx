@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { logOutAction } from "@/app/(auth)/actions";
 
-type NavItem = { href: string; label: string };
+type NavItem = { href: string; label: string; badge?: number };
 
 export function PersonaShell({
   persona,
@@ -31,9 +31,14 @@ export function PersonaShell({
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-md px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.badge != null && item.badge > 0 && (
+                <span className="ml-2 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                  {item.badge > 99 ? "99+" : item.badge}
+                </span>
+              )}
             </Link>
           ))}
         </nav>

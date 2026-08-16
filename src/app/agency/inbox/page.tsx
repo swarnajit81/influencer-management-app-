@@ -99,67 +99,68 @@ export default async function AgencyInboxPage() {
   await markInboxSeen(user.agencyId, user.id);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Inbox</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Every brand action and message across your campaigns.
+    <div className="space-y-8">
+      <header className="animate-in grid-bg -mx-10 -mt-10 border-b hairline px-10 pb-10 pt-14">
+        <p className="eyebrow">Inbox</p>
+        <h1 className="display mt-3 flex items-baseline gap-4 text-5xl">
+          Everything the brand touched.
           {unreadCount > 0 && (
-            <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+            <span className="inline-flex items-center gap-2 rounded-md border border-[var(--accent-line)] bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--accent)]">
+              <span className="signal-dot bg-[var(--accent)]" />
               {unreadCount} new
             </span>
           )}
+        </h1>
+        <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-[var(--muted)]">
+          One feed of every view, decision, and message across every campaign
+          — newest first. Nothing scattered across chat threads.
         </p>
-      </div>
+      </header>
 
       {top.length === 0 ? (
-        <div className="rounded-md border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
+        <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-4 py-16 text-center text-sm text-[var(--muted)]">
           Nothing yet. Send a package to a brand to start the conversation.
         </div>
       ) : (
-        <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-          {top.map((item) => {
+        <ul className="overflow-hidden rounded-lg border hairline">
+          {top.map((item, i) => {
             const unread = isUnread(item);
             const actorLabel =
               item.actorKind === "brand"
                 ? item.brandName ?? "Brand"
                 : "You";
             return (
-              <li
-                key={item.id}
-                className={`px-4 py-3 text-sm ${
-                  unread ? "bg-blue-50/60 dark:bg-blue-950/20" : ""
-                }`}
-              >
-                <div className="flex items-start justify-between gap-4">
+              <li key={item.id} className={i > 0 ? "border-t hairline" : ""}>
+                <Link
+                  href={`/agency/campaigns/${item.campaignId}${
+                    item.kind === "message" ? "#thread" : ""
+                  }`}
+                  className={`flex items-start gap-4 px-4 py-3 text-[13px] transition-colors hover:bg-[var(--surface)] ${
+                    unread ? "bg-[var(--accent-soft)]" : ""
+                  }`}
+                >
+                  <span
+                    className={`mt-1.5 signal-dot ${
+                      unread ? "bg-[var(--accent)]" : "bg-transparent"
+                    }`}
+                    aria-hidden
+                  />
                   <div className="min-w-0 flex-1">
-                    <div>
-                      <span
-                        className={`mr-2 inline-flex h-2 w-2 rounded-full align-middle ${
-                          unread ? "bg-blue-500" : "bg-transparent"
-                        }`}
-                        aria-hidden
-                      />
-                      <strong>{actorLabel}</strong> {item.label} on{" "}
-                      <Link
-                        href={`/agency/campaigns/${item.campaignId}${
-                          item.kind === "message" ? "#thread" : ""
-                        }`}
-                        className="underline"
-                      >
-                        {item.campaignName}
-                      </Link>
+                    <div className="truncate">
+                      <span className="font-semibold">{actorLabel}</span>{" "}
+                      <span className="text-[var(--muted)]">{item.label} on</span>{" "}
+                      <span className="font-medium">{item.campaignName}</span>
                     </div>
                     {item.detail && (
-                      <blockquote className="mt-1 line-clamp-3 border-l-2 border-zinc-300 pl-3 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                      <blockquote className="mt-1.5 line-clamp-3 border-l-2 pl-3 text-[12px] leading-relaxed text-[var(--muted)] hairline-strong">
                         {item.detail}
                       </blockquote>
                     )}
                   </div>
-                  <span className="shrink-0 text-xs text-zinc-500">
+                  <span className="shrink-0 pt-0.5 text-[11px] tabular text-[var(--subtle)]">
                     {relativeTime(new Date(item.ts))}
                   </span>
-                </div>
+                </Link>
               </li>
             );
           })}

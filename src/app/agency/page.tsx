@@ -39,55 +39,113 @@ export default async function AgencyDashboard() {
 
   const pitchingCount = campaigns.filter((c) => c.status === "pitching").length;
   const approvedCount = campaigns.filter((c) => c.status === "brand_approved").length;
-  const liveCount = campaigns.filter((c) => c.status === "active").length;
   const pendingDecisions = shortlist.filter((s) => s.brand_decision === "pending").length;
 
-  return (
-    <div className="space-y-10">
-      <div>
-        <h1 className="text-2xl font-semibold">Welcome back, {user.fullName.split(" ")[0]}</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Snapshot of your brand pitches and live campaigns.
-        </p>
-      </div>
+  const totalPipelinePaise = shortlist.reduce(
+    (s, it) => s + Number(it.brand_price_inr_paise ?? 0),
+    0,
+  );
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Pitching to brand" value={pitchingCount} href="/agency/campaigns" />
-        <Stat label="Brand-approved" value={approvedCount} href="/agency/campaigns" />
-        <Stat label="Live campaigns" value={liveCount} href="/agency/campaigns" />
-        <Stat
-          label="Pending brand decisions"
-          value={pendingDecisions}
-          hint="Shortlist items awaiting brand response"
-        />
+  const shortlistByCampaign = new Map<
+    string,
+    { approved: number; rejected: number; pending: number }
+  >();
+  for (const s of shortlist) {
+    const cid = Array.isArray(s.campaigns) ? s.campaigns[0]?.id : s.campaigns?.id;
+    if (!cid) continue;
+    const cur = shortlistByCampaign.get(cid) ?? {
+      approved: 0,
+      rejected: 0,
+      pending: 0,
+    };
+    if (s.brand_decision === "approved") cur.approved++;
+    else if (s.brand_decision === "rejected") cur.rejected++;
+    else cur.pending++;
+    shortlistByCampaign.set(cid, cur);
+  }
+
+  return (
+    <div className="space-y-14">
+      {/* Hero. Linear-style: ambient grid + spotlight, tight display type, one clear message. */}
+      <section className="grid-bg animate-in -mx-10 -mt-10 border-b hairline px-10 pb-14 pt-14">
+        <p className="eyebrow">Dashboard · {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}</p>
+        <h1 className="display mt-3 text-5xl sm:text-6xl">
+          Every brand touch, on the record.
+        </h1>
+        <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-[var(--muted)]">
+          {user.fullName.split(" ")[0]}&apos;s live snapshot of every pitch,
+          decision, and message across the agency. Nothing hidden in a chat
+          thread.
+        </p>
+        <div className="mt-8 flex items-center gap-3">
+          <Link href="/agency/campaigns/new" className="btn-dark">
+            New campaign
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+          </Link>
+          <Link href="/agency/campaigns" className="btn-ghost">
+            View campaigns
+          </Link>
+        </div>
       </section>
 
+      {/* KPI strip. Hairline dividers, tabular numerals, no cards. */}
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-4">
+        <Metric label="Pipeline value" value={formatPaiseAsINR(totalPipelinePaise)} />
+        <Metric label="Pitching" value={String(pitchingCount)} />
+        <Metric label="Brand approved" value={String(approvedCount)} tint="accent" />
+        <Metric label="Pending decisions" value={String(pendingDecisions)} />
+      </section>
+
+      {/* Recent campaigns. Hairline row with decision rail. */}
       <section>
-        <SectionHeader title="Recent campaigns" href="/agency/campaigns" />
+        <SectionHead title="Recent campaigns" href="/agency/campaigns" />
         {campaigns.length === 0 ? (
           <EmptyHint>
             No campaigns yet.{" "}
-            <Link href="/agency/campaigns/new" className="underline">
+            <Link href="/agency/campaigns/new" className="text-[var(--accent)] hover:underline">
               Create one
             </Link>
             .
           </EmptyHint>
         ) : (
-          <ul className="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-            {campaigns.map((c) => {
+          <ul className="mt-4 overflow-hidden rounded-lg border hairline">
+            {campaigns.map((c, i) => {
               const brand = Array.isArray(c.brands) ? c.brands[0] : c.brands;
+              const rail = shortlistByCampaign.get(c.id) ?? {
+                approved: 0,
+                rejected: 0,
+                pending: 0,
+              };
+              const total = rail.approved + rail.rejected + rail.pending;
               return (
-                <li key={c.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                  <Link href={`/agency/campaigns/${c.id}`} className="flex-1">
-                    <div className="font-medium">{c.name}</div>
-                    <div className="text-xs text-zinc-500">{brand?.name ?? "Unknown brand"}</div>
-                  </Link>
-                  <div className="ml-4 text-right">
-                    <StatusPill status={c.status} />
-                    <div className="mt-1 text-xs text-zinc-500">
-                      {formatPaiseAsINR(c.total_budget_inr_paise)}
+                <li key={c.id} className={i > 0 ? "border-t hairline" : ""}>
+                  <Link
+                    href={`/agency/campaigns/${c.id}`}
+                    className="flex items-center gap-4 px-4 py-3 text-sm transition-colors hover:bg-[var(--surface)]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <div className="truncate font-medium">{c.name}</div>
+                        <div className="truncate text-[12px] text-[var(--subtle)]">
+                          · {brand?.name ?? "Unknown brand"}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <DecisionRail rail={rail} />
+                        <span className="text-[11px] tabular text-[var(--subtle)]">
+                          {total === 0
+                            ? "no creators yet"
+                            : `${rail.approved}/${total} approved`}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                    <div className="shrink-0 text-right">
+                      <StatusPill status={c.status} />
+                      <div className="mt-1 text-[11px] tabular text-[var(--subtle)]">
+                        {formatPaiseAsINR(c.total_budget_inr_paise)}
+                      </div>
+                    </div>
+                  </Link>
                 </li>
               );
             })}
@@ -95,49 +153,65 @@ export default async function AgencyDashboard() {
         )}
       </section>
 
+      {/* Activity timeline. Dots on a rail. */}
       <section>
-        <SectionHeader title="Brand activity" />
+        <SectionHead title="Brand activity" />
         {events.length === 0 ? (
-          <EmptyHint>
-            No brand activity yet. Send a package to start.
-          </EmptyHint>
+          <EmptyHint>No brand activity yet. Send a package to start.</EmptyHint>
         ) : (
-          <ul className="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-            {events.map((e) => {
+          <ol className="mt-4 space-y-0">
+            {events.map((e, i) => {
               const camp = Array.isArray(e.campaigns) ? e.campaigns[0] : e.campaigns;
+              const isBrand = e.actor_kind === "brand";
               return (
                 <li
                   key={e.id}
-                  className="flex items-start justify-between gap-4 px-4 py-2"
+                  className="group flex items-start gap-3 rounded-md px-2 py-2 text-[13px] transition-colors hover:bg-[var(--surface)]"
                 >
-                  <div className="min-w-0 flex-1 truncate">
+                  <div className="relative flex flex-col items-center pt-1.5">
                     <span
-                      className={`mr-2 inline-flex h-2 w-2 rounded-full align-middle ${
-                        e.actor_kind === "brand" ? "bg-blue-500" : "bg-zinc-400"
+                      className={`signal-dot ${
+                        isBrand ? "bg-[var(--accent)]" : "bg-[var(--subtle)]"
                       }`}
-                      aria-hidden
                     />
-                    <strong className="capitalize">{e.actor_kind}</strong>{" "}
-                    {EVENT_LABEL[e.event_type] ?? e.event_type}
-                    {camp && (
-                      <>
-                        {" on "}
-                        <Link
-                          href={`/agency/campaigns/${camp.id}`}
-                          className="underline"
-                        >
-                          {camp.name}
-                        </Link>
-                      </>
+                    {i < events.length - 1 && (
+                      <span
+                        className="mt-1 h-full w-px flex-1"
+                        style={{ backgroundColor: "var(--border)" }}
+                      />
                     )}
                   </div>
-                  <span className="shrink-0 text-xs text-zinc-500">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate">
+                      <span className="font-medium capitalize">{e.actor_kind}</span>{" "}
+                      <span className="text-[var(--muted)]">
+                        {EVENT_LABEL[e.event_type] ?? e.event_type}
+                      </span>
+                      {camp && (
+                        <>
+                          {" on "}
+                          <Link
+                            href={`/agency/campaigns/${camp.id}`}
+                            className="font-medium text-[var(--foreground)] hover:text-[var(--accent)]"
+                          >
+                            {camp.name}
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                    {(e.metadata?.comment || e.metadata?.note) && (
+                      <p className="mt-0.5 truncate text-[12px] text-[var(--subtle)]">
+                        “{e.metadata.comment ?? e.metadata.note}”
+                      </p>
+                    )}
+                  </div>
+                  <span className="shrink-0 pt-1 text-[11px] tabular text-[var(--subtle)]">
                     {relativeTime(new Date(e.occurred_at))}
                   </span>
                 </li>
               );
             })}
-          </ul>
+          </ol>
         )}
       </section>
     </div>
@@ -166,33 +240,63 @@ function relativeTime(then: Date): string {
   return then.toLocaleDateString("en-IN", { dateStyle: "medium" });
 }
 
-function Stat({
+function Metric({
   label,
   value,
-  href,
-  hint,
+  tint,
 }: {
   label: string;
-  value: string | number;
-  href?: string;
-  hint?: string;
+  value: string;
+  tint?: "accent";
 }) {
-  const card = (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-      {hint && <div className="mt-1 text-xs text-zinc-500">{hint}</div>}
+  return (
+    <div className="bg-[var(--surface)] px-5 py-4">
+      <div className="eyebrow">{label}</div>
+      <div
+        className={`display mt-2 text-3xl tabular ${
+          tint === "accent" ? "text-[var(--accent)]" : ""
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
-  return href ? <Link href={href}>{card}</Link> : card;
 }
 
-function SectionHeader({ title, href }: { title: string; href?: string }) {
+function DecisionRail({
+  rail,
+}: {
+  rail: { approved: number; rejected: number; pending: number };
+}) {
+  const total = rail.approved + rail.rejected + rail.pending;
+  if (total === 0) {
+    return <div className="h-1 w-40 rounded-full bg-[var(--border)]" />;
+  }
+  const w = (n: number) => `${(n / total) * 100}%`;
   return (
-    <div className="flex items-baseline justify-between">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <div className="flex h-1 w-40 overflow-hidden rounded-full bg-[var(--border)]">
+      {rail.approved > 0 && (
+        <span className="h-full bg-emerald-500" style={{ width: w(rail.approved) }} />
+      )}
+      {rail.pending > 0 && (
+        <span className="h-full bg-amber-400" style={{ width: w(rail.pending) }} />
+      )}
+      {rail.rejected > 0 && (
+        <span className="h-full bg-red-400" style={{ width: w(rail.rejected) }} />
+      )}
+    </div>
+  );
+}
+
+function SectionHead({ title, href }: { title: string; href?: string }) {
+  return (
+    <div className="flex items-baseline justify-between border-b pb-2 hairline">
+      <h2 className="text-[13px] font-medium">{title}</h2>
       {href && (
-        <Link href={href} className="text-sm text-zinc-500 hover:underline">
+        <Link
+          href={href}
+          className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--subtle)] hover:text-[var(--foreground)]"
+        >
           View all →
         </Link>
       )}
@@ -202,28 +306,26 @@ function SectionHeader({ title, href }: { title: string; href?: string }) {
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-3 rounded-md border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+    <div className="mt-4 rounded-lg border border-dashed border-[var(--border-strong)] px-4 py-10 text-center text-sm text-[var(--muted)]">
       {children}
     </div>
   );
 }
 
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
-    pitching: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
-    brand_approved: "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200",
-    active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
-    completed: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
-    cancelled: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+  const map: Record<string, { dot: string; text: string }> = {
+    draft: { dot: "bg-[var(--subtle)]", text: "text-[var(--muted)]" },
+    pitching: { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" },
+    brand_approved: { dot: "bg-[var(--accent)]", text: "text-[var(--accent)]" },
+    active: { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" },
+    completed: { dot: "bg-[var(--subtle)]", text: "text-[var(--muted)]" },
+    cancelled: { dot: "bg-red-500", text: "text-red-700 dark:text-red-300" },
   };
+  const c = map[status] ?? map.draft;
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-        map[status] ?? map.draft
-      }`}
-    >
-      {status}
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${c.text}`}>
+      <span className={`signal-dot ${c.dot}`} />
+      {status.replace("_", " ")}
     </span>
   );
 }

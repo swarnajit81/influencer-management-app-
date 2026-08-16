@@ -1,78 +1,141 @@
 @import "tailwindcss";
 
+/* Linear-inspired token set. Neutral surfaces + one violet accent.
+   Both light and dark supported; the app defaults to system preference. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f7f8;
+  --foreground: #08090a;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --border: #ebebef;
+  --border-strong: #d6d6db;
+  --muted: #6b6b76;
+  --subtle: #94949e;
+  --accent: #5e6ad2;         /* Linear-ish violet */
+  --accent-hover: #4d59c7;
+  --accent-soft: rgba(94, 106, 210, 0.10);
+  --accent-line: rgba(94, 106, 210, 0.35);
+  --grid: rgba(8, 9, 10, 0.04);
+  --spotlight: rgba(94, 106, 210, 0.06);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #08090a;
+    --foreground: #f7f8f8;
+    --surface: #0f1011;
+    --surface-elevated: #131417;
+    --border: #1f2023;
+    --border-strong: #2a2b2f;
+    --muted: #8a8f98;
+    --subtle: #62666d;
+    --accent: #8a94e9;
+    --accent-hover: #a4adf0;
+    --accent-soft: rgba(138, 148, 233, 0.12);
+    --accent-line: rgba(138, 148, 233, 0.4);
+    --grid: rgba(255, 255, 255, 0.04);
+    --spotlight: rgba(138, 148, 233, 0.10);
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Inter, Arial, Helvetica, sans-serif;
+  font-feature-settings: "ss01", "cv11", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* View transitions. Next experimental.viewTransition wraps App Router
-   navigations in document.startViewTransition().
-   Root default: fade + tiny y-slide so the swap is perceptible even
-   when both pages share the same shell.
-   Directional slides: opt-in via Link transitionTypes={['nav-forward'|'nav-back']}.
-   Reduced motion: instant swap. */
+/* Linear-signature ambient lighting. Soft radial spill + faint grid overlay. */
+.grid-bg {
+  position: relative;
+  isolation: isolate;
+  background-image:
+    radial-gradient(1200px 500px at 20% -10%, var(--spotlight), transparent 60%),
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: auto, 56px 56px, 56px 56px;
+  background-position: 0 0, -1px -1px, -1px -1px;
+}
 
+/* Micro-typography utilities. */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+.hairline { border-color: var(--border); }
+.hairline-strong { border-color: var(--border-strong); }
+
+/* Display heading — tight, negative tracking, heavy weight. Linear vibe. */
+.display {
+  font-family: var(--font-geist-sans), Inter, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+}
+
+/* Tabular numerals for stats. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* View transitions — kept from previous set. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 260ms;
+  animation-duration: 220ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 ::view-transition-old(root) { animation-name: vt-fade-out; }
 ::view-transition-new(root) { animation-name: vt-fade-slide-in; }
 
-@keyframes vt-fade-out {
-  to { opacity: 0; }
-}
+@keyframes vt-fade-out { to { opacity: 0; } }
 @keyframes vt-fade-slide-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 ::view-transition-old(.nav-forward) {
-  animation: 160ms ease-in both vt-fade-out,
-             380ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-out-left;
+  animation: 140ms ease-in both vt-fade-out,
+             320ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-out-left;
 }
 ::view-transition-new(.nav-forward) {
-  animation: 220ms ease-out 140ms both vt-fade-in,
-             380ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-in-right;
+  animation: 200ms ease-out 120ms both vt-fade-in,
+             320ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-in-right;
 }
 ::view-transition-old(.nav-back) {
-  animation: 160ms ease-in both vt-fade-out,
-             380ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-out-right;
+  animation: 140ms ease-in both vt-fade-out,
+             320ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-out-right;
 }
 ::view-transition-new(.nav-back) {
-  animation: 220ms ease-out 140ms both vt-fade-in,
-             380ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-in-left;
+  animation: 200ms ease-out 120ms both vt-fade-in,
+             320ms cubic-bezier(0.2, 0, 0, 1) both vt-slide-in-left;
 }
 
 @keyframes vt-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes vt-slide-in-right { from { transform: translateX(40px); } to { transform: translateX(0); } }
-@keyframes vt-slide-in-left { from { transform: translateX(-40px); } to { transform: translateX(0); } }
-@keyframes vt-slide-out-left { to { transform: translateX(-40px); } }
-@keyframes vt-slide-out-right { to { transform: translateX(40px); } }
+@keyframes vt-slide-in-right { from { transform: translateX(30px); } to { transform: translateX(0); } }
+@keyframes vt-slide-in-left { from { transform: translateX(-30px); } to { transform: translateX(0); } }
+@keyframes vt-slide-out-left { to { transform: translateX(-30px); } }
+@keyframes vt-slide-out-right { to { transform: translateX(30px); } }
 
-/* Sidebar anchors across in-shell navigations so content feels swapped,
-   not the whole viewport reloaded. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in { animation: rise 260ms cubic-bezier(0.2, 0, 0, 1) both; }
+
 ::view-transition-group(agency-shell) { animation: none; z-index: 5; }
 ::view-transition-old(agency-shell) { display: none; }
 ::view-transition-new(agency-shell) { animation: none; }
@@ -84,13 +147,51 @@ body {
     animation-duration: 0s !important;
     animation-delay: 0s !important;
   }
+  .animate-in { animation: none; }
 }
 
 @layer components {
   .input {
-    @apply block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm
-           outline-none transition focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10
+    @apply block w-full rounded-md border bg-white px-3 py-2 text-sm shadow-none
+           outline-none transition placeholder:text-zinc-400
+           focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)]
            disabled:cursor-not-allowed disabled:opacity-50
-           dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-100 dark:focus:ring-zinc-100/10;
+           dark:bg-[var(--surface)] dark:text-zinc-100 dark:placeholder:text-zinc-500;
+    border-color: var(--border);
+  }
+
+  /* Linear-style card: hairline border, no rounded-lg (Linear uses md ~ 6-8px), no drop shadow. */
+  .panel {
+    @apply rounded-lg border bg-[var(--surface)] shadow-none;
+    border-color: var(--border);
+  }
+  .panel-hover {
+    @apply transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--surface-elevated)];
+  }
+
+  /* Buttons: sharp, high-contrast, subtle press. */
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium
+           text-white transition hover:bg-[var(--accent-hover)] active:translate-y-px disabled:opacity-60;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium
+           text-zinc-900 transition hover:bg-white active:translate-y-px
+           dark:text-zinc-100 dark:hover:bg-[var(--surface-elevated)];
+    border-color: var(--border);
+  }
+  .btn-dark {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium
+           text-white transition hover:bg-zinc-800 active:translate-y-px disabled:opacity-60
+           dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white;
+  }
+
+  .signal-dot {
+    @apply inline-block h-1.5 w-1.5 rounded-full;
+  }
+
+  /* Sharp separator, 1px, muted. Linear uses these everywhere. */
+  .rule {
+    border-color: var(--border);
   }
 }

@@ -163,71 +163,79 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
       {message_sent && <Banner kind="success">Message sent.</Banner>}
       {error && <Banner kind="error">{humanError(error)}</Banner>}
 
-      <h1 className="text-2xl font-semibold">
-        {snap.campaign.name}
-      </h1>
-      <p className="mt-2 text-sm text-zinc-500">
-        From <strong>{snap.agency.name ?? "the agency"}</strong> for{" "}
-        <strong>{snap.brand.name ?? "your brand"}</strong>. Version{" "}
-        {(version as any).version_number} — sent{" "}
-        {new Date((version as any).sent_at).toLocaleString("en-IN", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })}
-        .
-      </p>
+      <header className="grid-bg animate-in overflow-hidden rounded-lg border hairline bg-[var(--surface)] px-8 py-10">
+        <p className="eyebrow">
+          {snap.agency.name ?? "The agency"} → {snap.brand.name ?? "Your brand"}
+        </p>
+        <h1 className="display mt-3 text-4xl sm:text-5xl">
+          {snap.campaign.name}
+        </h1>
+        <p className="mt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--subtle)]">
+          Version {(version as any).version_number} · sent{" "}
+          {new Date((version as any).sent_at).toLocaleString("en-IN", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}
+        </p>
+      </header>
 
       {snap.campaign.brief && (
-        <section className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            Brief
-          </h2>
-          <p className="mt-2 whitespace-pre-wrap text-sm">{snap.campaign.brief}</p>
+        <section className="mt-6 panel p-6">
+          <h2 className="eyebrow">The brief</h2>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[var(--foreground)]">
+            {snap.campaign.brief}
+          </p>
         </section>
       )}
 
-      <section className="mt-6 grid gap-3 rounded-lg border border-zinc-200 bg-white p-5 text-sm dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-4">
+      <section className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-4">
         <Stat label="Creators" value={String(snap.items.length)} />
         <Stat label="Total" value={formatPaiseAsINR(totalPrice)} />
         <Stat
           label="Timeline"
           value={
             snap.campaign.start_date && snap.campaign.end_date
-              ? `${snap.campaign.start_date} → ${snap.campaign.end_date}`
+              ? `${snap.campaign.start_date}→${snap.campaign.end_date}`
               : "TBD"
           }
         />
         <Stat
           label="Decisions"
-          value={`${approvedCount} approved · ${rejectedCount} rejected · ${pendingCount} pending`}
+          value={`${approvedCount}·${rejectedCount}·${pendingCount}`}
+          hint={`approved / rejected / pending`}
         />
       </section>
 
-      <h2 className="mt-8 text-lg font-semibold">Proposed creators</h2>
+      <div className="mt-12 flex items-baseline justify-between border-b pb-2 hairline">
+        <h2 className="text-[13px] font-medium">Proposed creators</h2>
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--subtle)]">
+          {snap.items.length} · ₹{formatPaiseAsINR(totalPrice).replace("₹", "")}
+        </p>
+      </div>
       <ul className="mt-4 space-y-4">
         {snap.items.map((it) => {
           const live = decisionMap.get(it.id) ?? { decision: "pending", comment: null };
           return (
             <li
               key={it.id}
-              className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+              className="panel panel-hover animate-in p-6"
             >
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-base font-semibold">
+                <div className="min-w-0">
+                  <div className="text-[15px] font-semibold tracking-tight">
                     {it.influencer.display_name}
-                    {it.influencer.instagram_handle && (
-                      <a
-                        href={`https://instagram.com/${it.influencer.instagram_handle}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-2 text-sm text-zinc-500 hover:underline"
-                      >
-                        @{it.influencer.instagram_handle}
-                      </a>
-                    )}
                   </div>
-                  <div className="mt-1 text-xs text-zinc-500">
+                  {it.influencer.instagram_handle && (
+                    <a
+                      href={`https://instagram.com/${it.influencer.instagram_handle}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-[12px] text-[var(--subtle)] hover:text-[var(--accent)]"
+                    >
+                      @{it.influencer.instagram_handle}
+                    </a>
+                  )}
+                  <div className="mt-2 text-[12px] tabular text-[var(--muted)]">
                     {Number(it.influencer.follower_count_total ?? 0).toLocaleString("en-IN")}{" "}
                     followers
                     {it.influencer.engagement_rate !== null && (
@@ -236,11 +244,11 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
                     {it.influencer.city && <> · {it.influencer.city}</>}
                   </div>
                   {(it.influencer.niches ?? []).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
+                    <div className="mt-3 flex flex-wrap gap-1">
                       {(it.influencer.niches ?? []).map((n) => (
                         <span
                           key={n}
-                          className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                          className="rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)] hairline"
                         >
                           {n}
                         </span>
@@ -249,33 +257,31 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
                   )}
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-lg font-semibold">
+                  <div className="display text-2xl tabular">
                     {formatPaiseAsINR(Number(it.brand_price_inr_paise))}
                   </div>
                 </div>
               </div>
 
               {it.rationale && (
-                <div className="mt-3 rounded-md bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
-                  <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    Why this creator
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap">{it.rationale}</p>
+                <div className="mt-4 border-l-2 pl-3 text-[13px] italic text-[var(--muted)] hairline-strong">
+                  {it.rationale}
                 </div>
               )}
 
               {it.deliverables.length > 0 && (
-                <div className="mt-3">
-                  <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <div className="mt-4">
+                  <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
                     Deliverables
                   </div>
-                  <ul className="mt-1 flex flex-wrap gap-2 text-sm">
+                  <ul className="mt-2 flex flex-wrap gap-1.5 text-sm">
                     {it.deliverables.map((d, i) => (
                       <li
                         key={i}
-                        className="rounded-md border border-zinc-200 px-2 py-1 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                        className="rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
                       >
-                        {d.count}× {DELIVERABLE_LABEL[d.type] ?? d.type}
+                        <span className="tabular-nums">{d.count}×</span>{" "}
+                        {DELIVERABLE_LABEL[d.type] ?? d.type}
                       </li>
                     ))}
                   </ul>
@@ -283,18 +289,18 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
               )}
 
               {it.sample_urls.length > 0 && (
-                <div className="mt-3">
-                  <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <div className="mt-4">
+                  <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
                     Sample work
                   </div>
-                  <ul className="mt-1 space-y-1 text-sm">
+                  <ul className="mt-2 space-y-1 text-sm">
                     {it.sample_urls.map((u) => (
                       <li key={u}>
                         <a
                           href={u}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline dark:text-blue-400"
+                          className="text-[var(--accent)] hover:underline"
                         >
                           {u}
                         </a>
@@ -318,9 +324,14 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
         })}
       </ul>
 
-      <section id="thread" className="mt-10">
-        <h2 className="text-lg font-semibold">Message the agency</h2>
-        <div className="mt-3">
+      <section id="thread" className="mt-12">
+        <div className="flex items-baseline justify-between border-b pb-2 hairline">
+          <h2 className="text-[13px] font-medium">Message the agency</h2>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--subtle)]">
+            Live
+          </p>
+        </div>
+        <div className="mt-4">
           <MessageThread
             campaignId={(version as any).campaign_id}
             packageToken={token}
@@ -333,12 +344,15 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
         </div>
       </section>
 
-      <section className="mt-10 rounded-lg border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-900/50">
-        <h2 className="text-sm font-semibold">Not happy with the mix?</h2>
-        <p className="mt-1 text-xs text-zinc-500">
+      <section className="mt-12 panel p-6">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-[13px] font-medium">Not happy with the mix?</h2>
+          <p className="eyebrow">Fresh package</p>
+        </div>
+        <p className="mt-2 text-[13px] text-[var(--muted)]">
           Tell the agency what to change and they&apos;ll send a fresh package.
         </p>
-        <form action={brandRequestRevisionAction} className="mt-3 space-y-2">
+        <form action={brandRequestRevisionAction} className="mt-4 space-y-3">
           <input type="hidden" name="token" value={token} />
           <textarea
             name="note"
@@ -357,8 +371,8 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <main className="mx-auto max-w-3xl px-6 py-12 text-zinc-900 dark:text-zinc-50">
+    <div className="relative min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+      <main className="relative mx-auto max-w-3xl px-6 py-12">
         {children}
       </main>
     </div>
@@ -374,13 +388,18 @@ function ErrorShell({ title, body }: { title: string; body: string }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
-      <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
         {label}
       </div>
-      <div className="mt-1 font-medium">{value}</div>
+      <div className="mt-1.5 display text-2xl leading-none tracking-tight tabular-nums">
+        {value}
+      </div>
+      {hint && (
+        <div className="mt-1 text-[11px] text-zinc-500">{hint}</div>
+      )}
     </div>
   );
 }

@@ -489,23 +489,11 @@ export default async function CampaignDetailPage({
         <MessageThread
           campaignId={campaignId}
           viewerKind="agency"
+          viewerName={user.fullName}
           initialMessages={initialMessages}
+          postAction={postCampaignMessageAction}
+          hiddenFields={{ campaign_id: campaignId }}
         />
-        <form
-          action={postCampaignMessageAction}
-          className="mt-3 flex items-start gap-2"
-        >
-          <input type="hidden" name="campaign_id" value={campaignId} />
-          <textarea
-            name="body"
-            rows={2}
-            required
-            maxLength={4000}
-            placeholder="Reply to the brand…"
-            className="input flex-1"
-          />
-          <SubmitButton pendingLabel="Sending…">Send</SubmitButton>
-        </form>
       </section>
 
       {events && events.length > 0 && (

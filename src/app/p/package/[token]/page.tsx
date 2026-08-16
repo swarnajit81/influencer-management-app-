@@ -4,6 +4,7 @@ import { verifyToken, type VerifyResult } from "@/lib/tokens";
 import { formatPaiseAsINR } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { MessageThread } from "@/components/MessageThread";
+import { BrandDecisionForm } from "@/components/BrandDecisionForm";
 import {
   brandDecideShortlistItemAction,
   brandRequestRevisionAction,
@@ -251,7 +252,6 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
                   <div className="text-lg font-semibold">
                     {formatPaiseAsINR(Number(it.brand_price_inr_paise))}
                   </div>
-                  <StatusPill decision={live.decision} />
                 </div>
               </div>
 
@@ -304,50 +304,15 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
                 </div>
               )}
 
-              {live.comment && (
-                <div className="mt-3 rounded-md bg-amber-50 p-3 text-sm dark:bg-amber-950/40">
-                  <div className="text-xs font-medium uppercase tracking-wide text-amber-900 dark:text-amber-300">
-                    Your comment
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap text-amber-900 dark:text-amber-200">
-                    {live.comment}
-                  </p>
-                </div>
-              )}
-
-              {live.decision === "pending" && (
-                <form
-                  action={brandDecideShortlistItemAction}
-                  className="mt-4 space-y-2 border-t border-zinc-200 pt-4 dark:border-zinc-800"
-                >
-                  <input type="hidden" name="token" value={token} />
-                  <input type="hidden" name="item_id" value={it.id} />
-                  <textarea
-                    name="brand_comment"
-                    rows={2}
-                    placeholder="Comment (optional — required for reject)"
-                    className="input"
-                  />
-                  <div className="flex gap-2">
-                    <SubmitButton
-                      name="decision"
-                      value="approved"
-                      variant="success"
-                      pendingLabel="Saving…"
-                    >
-                      Approve
-                    </SubmitButton>
-                    <SubmitButton
-                      name="decision"
-                      value="rejected"
-                      variant="secondary"
-                      pendingLabel="Saving…"
-                    >
-                      Reject
-                    </SubmitButton>
-                  </div>
-                </form>
-              )}
+              <BrandDecisionForm
+                itemId={it.id}
+                token={token}
+                initial={{
+                  decision: live.decision as "pending" | "approved" | "rejected",
+                  comment: live.comment,
+                }}
+                postAction={brandDecideShortlistItemAction}
+              />
             </li>
           );
         })}
@@ -360,24 +325,12 @@ export default async function BrandPackagePage({ params, searchParams }: PagePro
             campaignId={(version as any).campaign_id}
             packageToken={token}
             viewerKind="brand"
+            viewerName={snap.brand.name}
             initialMessages={initialMessages}
+            postAction={postBrandMessageAction}
+            hiddenFields={{ token }}
           />
         </div>
-        <form
-          action={postBrandMessageAction}
-          className="mt-3 flex items-start gap-2"
-        >
-          <input type="hidden" name="token" value={token} />
-          <textarea
-            name="body"
-            rows={2}
-            required
-            maxLength={4000}
-            placeholder="Write to the agency…"
-            className="input flex-1"
-          />
-          <SubmitButton pendingLabel="Sending…">Send</SubmitButton>
-        </form>
       </section>
 
       <section className="mt-10 rounded-lg border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -429,20 +382,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       </div>
       <div className="mt-1 font-medium">{value}</div>
     </div>
-  );
-}
-
-function StatusPill({ decision }: { decision: string }) {
-  const cls =
-    decision === "approved"
-      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-      : decision === "rejected"
-        ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-        : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200";
-  return (
-    <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {decision}
-    </span>
   );
 }
 

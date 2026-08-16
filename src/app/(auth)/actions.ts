@@ -1301,12 +1301,7 @@ export async function postCampaignMessageAction(formData: FormData) {
     body,
   });
 
-  if (error) {
-    redirect(
-      `/agency/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`,
-    );
-  }
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/agency/campaigns/${campaignId}`);
-  redirect(`/agency/campaigns/${campaignId}?message_sent=1#thread`);
 }

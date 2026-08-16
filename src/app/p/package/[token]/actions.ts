@@ -102,11 +102,7 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
     })
     .eq("id", itemId);
 
-  if (error) {
-    redirect(
-      `/p/package/${encodeURIComponent(token)}?error=${encodeURIComponent(error.message)}`,
-    );
-  }
+  if (error) throw new Error(error.message);
 
   await admin.from("audit_log").insert({
     actor_profile_id: brandProfileId,
@@ -161,7 +157,6 @@ export async function brandDecideShortlistItemAction(formData: FormData) {
 
   revalidatePath(`/p/package/${token}`);
   revalidatePath(`/agency/campaigns/${payload.campaignId}`);
-  redirect(`/p/package/${encodeURIComponent(token)}?decided=${itemId}`);
 }
 
 export async function brandRequestRevisionAction(formData: FormData) {
@@ -248,11 +243,7 @@ export async function postBrandMessageAction(formData: FormData) {
     body,
   });
 
-  if (error) {
-    redirect(
-      `/p/package/${encodeURIComponent(token)}?error=${encodeURIComponent(error.message)}`,
-    );
-  }
+  if (error) throw new Error(error.message);
 
   if (ctx) {
     await notifyAgencyOfBrandAction({
@@ -267,5 +258,4 @@ export async function postBrandMessageAction(formData: FormData) {
 
   revalidatePath(`/p/package/${token}`);
   revalidatePath(`/agency/campaigns/${payload.campaignId}`);
-  redirect(`/p/package/${encodeURIComponent(token)}?message_sent=1#thread`);
 }

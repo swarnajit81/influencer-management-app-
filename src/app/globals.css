@@ -179,11 +179,72 @@ body {
   animation: pulse-dot 1800ms ease-out infinite;
 }
 
+/* Typing dots for the chat animation. */
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  color: var(--muted);
+  animation: typing 1200ms ease-in-out infinite;
+}
+.bg-\[var\(--accent\)\]\/80 .typing-dot { color: white; }
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Mouse-follow spotlight for feature cards. Reads --mx/--my custom
+   props set by the client component via mousemove. */
+.glow-card {
+  position: relative;
+  isolation: isolate;
+}
+.glow-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    var(--accent-soft),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 220ms ease;
+  z-index: 0;
+}
+.glow-card:hover::before { opacity: 1; }
+.glow-card > * { position: relative; z-index: 1; }
+
+/* Word-by-word staggered rise for hero. */
+.rise-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.5em);
+  animation: word-rise 620ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes word-rise {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Shine sweep for the primary CTA in the "Send" tutorial step. */
+@keyframes shine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
   .animate-draw,
   .animate-area,
-  .animate-pulse-dot { animation: none; }
+  .animate-pulse-dot,
+  .typing-dot,
+  .rise-word { animation: none; opacity: 1; transform: none; }
+  .glow-card::before { display: none; }
 }
 
 ::view-transition-group(agency-shell) { animation: none; z-index: 5; }

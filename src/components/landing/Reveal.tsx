@@ -22,15 +22,23 @@ export function Reveal({
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            setTimeout(() => el.classList.add("is-in"), delay);
+            window.setTimeout(() => el.classList.add("is-in"), delay);
             io.unobserve(el);
           }
         }
       },
-      { threshold: 0.15, rootMargin: "0px 0px -60px 0px" },
+      // Generous rootMargin so anything within ~1 viewport below the fold
+      // reveals early (feels snappier + avoids blank sections on scroll).
+      { threshold: 0.08, rootMargin: "0px 0px 800px 0px" },
     );
     io.observe(el);
-    return () => io.disconnect();
+
+    // Safety fallback: guarantee reveal after 2s regardless of scroll.
+    const fallback = window.setTimeout(() => el.classList.add("is-in"), 2000);
+    return () => {
+      io.disconnect();
+      window.clearTimeout(fallback);
+    };
   }, [delay]);
 
   return (

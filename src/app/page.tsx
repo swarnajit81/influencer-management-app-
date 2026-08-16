@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { LaptopPreview } from "@/components/landing/LaptopPreview";
 import { Reveal } from "@/components/landing/Reveal";
+import { AnimatedChat } from "@/components/landing/AnimatedChat";
+import { Tutorial } from "@/components/landing/Tutorial";
+import { GlowCard } from "@/components/landing/GlowCard";
+import { RiseSegments } from "@/components/landing/RiseWords";
 
 export default function Home() {
   return (
@@ -9,6 +13,8 @@ export default function Home() {
       <Hero />
       <FlowSection />
       <PreviewSection />
+      <ChatSection />
+      <TutorialSection />
       <FeatureGrid />
       <PositioningSection />
       <CtaSection />
@@ -79,9 +85,15 @@ function Hero() {
     <section className="grid-bg relative overflow-hidden border-b hairline">
       <div className="mx-auto max-w-6xl px-6 pb-24 pt-24 sm:pb-32 sm:pt-32">
         <p className="eyebrow animate-in">For Indian PR agencies</p>
-        <h1 className="display animate-in mt-4 text-5xl leading-[1.02] sm:text-7xl">
-          The pitch loop,{" "}
-          <span className="text-[var(--accent)]">on the record.</span>
+        <h1 className="display mt-4 text-5xl leading-[1.02] sm:text-7xl">
+          <RiseSegments
+            segments={[
+              { text: "The pitch loop," },
+              { text: "on the record.", className: "text-[var(--accent)]" },
+            ]}
+            stepMs={70}
+            delayStart={80}
+          />
         </h1>
         <p className="animate-in mt-6 max-w-2xl text-[17px] leading-relaxed text-[var(--muted)]">
           One workspace for the shortlist you send, the price you quote, the
@@ -270,6 +282,83 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ChatSection() {
+  return (
+    <section id="chat" className="border-b hairline">
+      <div className="mx-auto max-w-6xl px-6 py-24">
+        <div className="grid gap-12 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
+          <Reveal>
+            <p className="eyebrow">The chat inside the deal</p>
+            <h2 className="display mt-3 text-4xl sm:text-5xl">
+              No parallel WhatsApp.<br />
+              <span className="text-[var(--accent)]">One thread.</span>
+            </h2>
+            <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[var(--muted)]">
+              Every message lands next to the exact package version and
+              creator it&apos;s about. The brand chats without an account.
+              You reply without switching tabs. Every line lands in the
+              same audit log as the decisions.
+            </p>
+            <ul className="mt-6 space-y-2 text-[13px]">
+              <ChatFeature>
+                <b>Typing indicator</b> · both sides see when the other is
+                mid-reply
+              </ChatFeature>
+              <ChatFeature>
+                <b>Auto-notify</b> · you get an email the second the brand
+                sends
+              </ChatFeature>
+              <ChatFeature>
+                <b>Audit-safe</b> · the whole thread persists on the
+                campaign record
+              </ChatFeature>
+            </ul>
+          </Reveal>
+
+          <Reveal delay={120}>
+            <AnimatedChat />
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ChatFeature({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2 text-[var(--muted)]">
+      <span className="mt-1.5 signal-dot bg-[var(--accent)]" />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function TutorialSection() {
+  return (
+    <section id="tutorial" className="border-b hairline">
+      <div className="mx-auto max-w-6xl px-6 py-24">
+        <Reveal>
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="eyebrow">Learn it in 90 seconds</p>
+            <h2 className="display mt-3 text-4xl sm:text-5xl">
+              Watch the loop{" "}
+              <span className="text-[var(--accent)]">run itself.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--muted)]">
+              Hover any step to freeze it. The panel plays through the four
+              real screens your team will use.
+            </p>
+          </div>
+        </Reveal>
+
+        <Reveal delay={120} className="mt-12">
+          <Tutorial />
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
 function FeatureGrid() {
   const features = [
     {
@@ -318,7 +407,7 @@ function FeatureGrid() {
 
         <Reveal delay={100} className="mt-10 grid gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f) => (
-            <div
+            <GlowCard
               key={f.title}
               className="group bg-[var(--surface)] p-6 transition-colors hover:bg-[var(--surface-elevated)]"
             >
@@ -331,7 +420,7 @@ function FeatureGrid() {
               <p className="mt-3 text-[13px] leading-relaxed text-[var(--muted)]">
                 {f.body}
               </p>
-            </div>
+            </GlowCard>
           ))}
         </Reveal>
       </div>

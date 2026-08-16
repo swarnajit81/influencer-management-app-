@@ -44,3 +44,5 @@ next-env.d.ts
 influencers-seeded.png
 brands-seeded.png
 *.playwright-mcp
+dev-brand.png
+brand-portal-bypass.png

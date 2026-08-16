@@ -59,7 +59,9 @@ export default async function DevLoginPage({
         Dev-only bypass. Skips magic-link inbox round-trip by minting a session
         server-side via the service-role key. Route is gated on{" "}
         <code>NODE_ENV !== &quot;production&quot;</code> or{" "}
-        <code>ENABLE_DEV_LOGIN=1</code>. The account must already exist.
+        <code>ENABLE_DEV_LOGIN=1</code>. The account must already exist. Seed
+        dummy brands + influencers with{" "}
+        <code>node scripts/qa-seed-fixtures.mjs</code>.
       </div>
 
       <h1 className="text-2xl font-semibold">Dev sign-in</h1>

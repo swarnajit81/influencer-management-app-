@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { LaptopPreview } from "@/components/landing/LaptopPreview";
+import { Reveal } from "@/components/landing/Reveal";
 
 export default function Home() {
   return (
@@ -183,34 +185,41 @@ function FlowSection() {
     <section id="how" className="border-b hairline">
       <div className="mx-auto max-w-6xl px-6 py-24">
         <div className="grid gap-10 sm:grid-cols-[minmax(0,1fr)_2fr]">
-          <div>
-            <p className="eyebrow">How it works</p>
-            <h2 className="display mt-3 text-4xl">
-              Four steps.<br />
-              Zero screenshots.
-            </h2>
-            <p className="mt-4 text-[15px] leading-relaxed text-[var(--muted)]">
-              The workflow you already run — the shortlist, the pitch, the
-              back-and-forth — but every step leaves a receipt.
-            </p>
-          </div>
+          <Reveal>
+            <div>
+              <p className="eyebrow">How it works</p>
+              <h2 className="display mt-3 text-4xl">
+                Four steps.<br />
+                Zero screenshots.
+              </h2>
+              <p className="mt-4 text-[15px] leading-relaxed text-[var(--muted)]">
+                The workflow you already run — the shortlist, the pitch, the
+                back-and-forth — but every step leaves a receipt.
+              </p>
+            </div>
+          </Reveal>
 
-          <ol className="grid gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-2">
-            {steps.map((s) => (
-              <li key={s.n} className="bg-[var(--surface)] p-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium tabular text-[var(--accent)]">
-                    {s.n}
-                  </span>
-                  <span className="h-px flex-1 bg-[var(--border)]" />
-                </div>
-                <h3 className="mt-3 text-[15px] font-semibold">{s.title}</h3>
-                <p className="mt-2 text-[13px] leading-relaxed text-[var(--muted)]">
-                  {s.body}
-                </p>
-              </li>
-            ))}
-          </ol>
+          <Reveal delay={120}>
+            <ol className="grid gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-2">
+              {steps.map((s) => (
+                <li
+                  key={s.n}
+                  className="group bg-[var(--surface)] p-6 transition-colors hover:bg-[var(--surface-elevated)]"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-medium tabular text-[var(--accent)]">
+                      {s.n}
+                    </span>
+                    <span className="h-px flex-1 bg-[var(--border)] transition-colors group-hover:bg-[var(--accent-line)]" />
+                  </div>
+                  <h3 className="mt-3 text-[15px] font-semibold">{s.title}</h3>
+                  <p className="mt-2 text-[13px] leading-relaxed text-[var(--muted)]">
+                    {s.body}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </Reveal>
         </div>
       </div>
     </section>
@@ -221,104 +230,34 @@ function PreviewSection() {
   return (
     <section id="product" className="grid-bg border-b hairline">
       <div className="mx-auto max-w-6xl px-6 py-24">
-        <div className="grid gap-10 sm:grid-cols-[2fr_minmax(0,1fr)]">
-          <div>
-            <p className="eyebrow">The brand-facing view</p>
-            <h2 className="display mt-3 text-4xl">
-              A link that answers{" "}
-              <span className="text-[var(--accent)]">before</span> they ask.
+        <Reveal>
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="eyebrow">The pipeline you couldn&apos;t see before</p>
+            <h2 className="display mt-3 text-4xl sm:text-5xl">
+              Watch the money{" "}
+              <span className="text-[var(--accent)]">move.</span>
             </h2>
-            <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[var(--muted)]">
-              No dashboards to learn. Brand opens one URL and sees the
-              creators, the deliverables, the price, and every decision they
-              or you have made — always the latest.
+            <p className="mx-auto mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--muted)]">
+              Every quoted brand price flows into one live number. Hover the
+              chart to see any day of the last 30. No spreadsheet to
+              reconcile at quarter-end.
             </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Chip>Package snapshot</Chip>
-              <Chip>Per-creator approve / reject</Chip>
-              <Chip>Inline chat</Chip>
-              <Chip>Revision request</Chip>
-            </div>
           </div>
+        </Reveal>
 
-          {/* Faux product preview — a stylised package card. */}
-          <div className="animate-in relative">
-            <div
-              aria-hidden
-              className="absolute -inset-8 -z-10 rounded-2xl bg-[var(--accent-soft)] blur-2xl"
-            />
-            <div className="panel overflow-hidden">
-              <div className="border-b hairline px-4 py-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-[var(--border-strong)]" />
-                  <span className="h-2 w-2 rounded-full bg-[var(--border-strong)]" />
-                  <span className="h-2 w-2 rounded-full bg-[var(--border-strong)]" />
-                  <span className="ml-3 text-[11px] tabular text-[var(--subtle)]">
-                    /p/package/…
-                  </span>
-                </div>
-              </div>
-              <div className="p-5">
-                <p className="eyebrow">Sattva Ayurveda → Kirti Media</p>
-                <p className="mt-2 text-[15px] font-semibold">Diwali &apos;26 Skincare</p>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--subtle)]">
-                  Version 2 · sent 3 Oct
-                </p>
-                <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-md border hairline bg-[var(--border)] text-center">
-                  <MiniStat n="4" l="Creators" />
-                  <MiniStat n="₹3.6L" l="Total" />
-                  <MiniStat n="2·0·2" l="A·R·P" />
-                </div>
-                <ul className="mt-4 space-y-2">
-                  <RowPreview name="Aditi Iyer" price="₹90,000" state="approved" />
-                  <RowPreview name="Rohan Nair" price="₹1,20,000" state="pending" />
-                  <RowPreview name="Zara Bose" price="₹80,000" state="approved" />
-                  <RowPreview name="Priya Menon" price="₹70,000" state="pending" />
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Reveal delay={120} className="mt-12">
+          <LaptopPreview />
+        </Reveal>
+
+        <Reveal delay={240} className="mt-10 flex flex-wrap justify-center gap-2">
+          <Chip>Package snapshot</Chip>
+          <Chip>Per-creator approve / reject</Chip>
+          <Chip>Inline chat</Chip>
+          <Chip>Revision request</Chip>
+          <Chip>Live pipeline chart</Chip>
+        </Reveal>
       </div>
     </section>
-  );
-}
-
-function MiniStat({ n, l }: { n: string; l: string }) {
-  return (
-    <div className="bg-[var(--surface)] px-2 py-2">
-      <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--subtle)]">
-        {l}
-      </div>
-      <div className="mt-1 text-[13px] font-semibold tabular">{n}</div>
-    </div>
-  );
-}
-
-function RowPreview({
-  name,
-  price,
-  state,
-}: {
-  name: string;
-  price: string;
-  state: "approved" | "pending";
-}) {
-  const dot = state === "approved" ? "bg-emerald-500" : "bg-amber-400";
-  const label = state === "approved" ? "approved" : "pending";
-  return (
-    <li className="flex items-center justify-between rounded-md border px-3 py-2 hairline">
-      <div className="flex items-center gap-2">
-        <span className={`signal-dot ${dot}`} />
-        <span className="text-[13px] font-medium">{name}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--subtle)]">
-          {label}
-        </span>
-        <span className="text-[13px] font-semibold tabular">{price}</span>
-      </div>
-    </li>
   );
 }
 
@@ -368,14 +307,16 @@ function FeatureGrid() {
   return (
     <section className="border-b hairline">
       <div className="mx-auto max-w-6xl px-6 py-24">
-        <div className="max-w-2xl">
-          <p className="eyebrow">Built for the pitch</p>
-          <h2 className="display mt-3 text-4xl">
-            Six primitives.<br />One system of record.
-          </h2>
-        </div>
+        <Reveal>
+          <div className="max-w-2xl">
+            <p className="eyebrow">Built for the pitch</p>
+            <h2 className="display mt-3 text-4xl">
+              Six primitives.<br />One system of record.
+            </h2>
+          </div>
+        </Reveal>
 
-        <div className="mt-10 grid gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-3">
+        <Reveal delay={100} className="mt-10 grid gap-px overflow-hidden rounded-lg border hairline bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f) => (
             <div
               key={f.title}
@@ -392,7 +333,7 @@ function FeatureGrid() {
               </p>
             </div>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   );

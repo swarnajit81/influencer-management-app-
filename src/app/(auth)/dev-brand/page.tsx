@@ -3,6 +3,9 @@ import Link from "next/link";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { signToken } from "@/lib/tokens";
 
+// Always render at request time — the campaign list is live agency state.
+export const dynamic = "force-dynamic";
+
 function devBypassEnabled(): boolean {
   return process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "1";
 }

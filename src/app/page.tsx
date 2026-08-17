@@ -54,6 +54,14 @@ function TopNav({ demoEnabled }: { demoEnabled: boolean }) {
           >
             Product
           </Link>
+          <a
+            href="/os/index.html"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md px-3 py-1.5 text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+          >
+            OS demo
+          </a>
           <Link
             href="/login"
             className="rounded-md px-3 py-1.5 text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
@@ -150,6 +158,17 @@ function Hero({ demoEnabled }: { demoEnabled: boolean }) {
               See the product
             </Link>
           )}
+          <a
+            href="/os/index.html"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          >
+            Interactive OS demo
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] opacity-70">
+              ⌘K
+            </span>
+          </a>
           <span className="ml-2 text-[12px] text-[var(--subtle)]">
             {demoEnabled
               ? "Instant demo · seeded with 10 brands + 45 creators"

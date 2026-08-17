@@ -25,12 +25,14 @@ export default async function DevBrandPage() {
 
   const admin = createSupabaseAdminClient();
 
-  // Show every campaign that belongs to the QA agency, with its latest
+  // Show every campaign that belongs to the demo agency, with its latest
   // package_version (if any). Newest campaigns first.
+  const demoEmail =
+    process.env.DEMO_AGENCY_EMAIL ?? "qa-agency@example.com";
   const { data: qaProfile } = await admin
     .from("profiles")
     .select("id, agency_members(agency_id)")
-    .eq("email", "qa-agency@example.com")
+    .eq("email", demoEmail)
     .maybeSingle();
 
   const agencyId = qaProfile?.agency_members?.[0]?.agency_id ?? null;
@@ -71,15 +73,15 @@ export default async function DevBrandPage() {
 
       <h1 className="text-2xl font-semibold">Open a campaign as the brand</h1>
       <p className="mt-2 text-sm text-zinc-500">
-        Campaigns under <code>qa-agency@example.com</code>. Campaigns without a
-        package version show a link to the agency detail page — send the
-        package there first, then come back.
+        Campaigns under <code>{demoEmail}</code>. Campaigns without a package
+        version show a link to the agency detail page — send the package
+        there first, then come back.
       </p>
 
       {!agencyId && (
         <p className="mt-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-          QA agency not found. Sign up as <code>qa-agency@example.com</code>{" "}
-          via <Link className="underline" href="/dev-login">/dev-login</Link>{" "}
+          Demo agency not found. Sign up as <code>{demoEmail}</code> via{" "}
+          <Link className="underline" href="/dev-login">/dev-login</Link>{" "}
           first.
         </p>
       )}

@@ -22,7 +22,7 @@ const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_RO
   auth: { persistSession: false },
 });
 
-const AGENCY_EMAIL = "qa-agency@example.com";
+const AGENCY_EMAIL = process.env.SEED_AGENCY_EMAIL ?? "qa-agency@example.com";
 const MARKER = "@qa-fixtures.test";
 
 const args = process.argv.slice(2);

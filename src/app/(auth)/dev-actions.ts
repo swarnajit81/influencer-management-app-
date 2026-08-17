@@ -17,9 +17,11 @@ export async function devLoginAction(formData: FormData): Promise<void> {
   if (!(await devLoginEnabled())) notFound();
 
   const rawEmail = String(formData.get("email") ?? "").trim().toLowerCase();
-  // Default to the seeded QA agency when the caller omits an email — this
-  // powers the one-click "Log in as test agency" button.
-  const email = rawEmail || "qa-agency@example.com";
+  // Default to the seeded demo agency when the caller omits an email — this
+  // powers the one-click "Log in as test agency" button. DEMO_AGENCY_EMAIL
+  // lets prod point at a different account than local.
+  const email =
+    rawEmail || process.env.DEMO_AGENCY_EMAIL || "qa-agency@example.com";
 
   const admin = createSupabaseAdminClient();
   const { data: link, error: linkErr } = await admin.auth.admin.generateLink({

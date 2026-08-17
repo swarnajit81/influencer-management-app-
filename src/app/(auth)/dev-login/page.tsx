@@ -1,46 +1,12 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SubmitButton } from "@/components/SubmitButton";
-
-function devLoginEnabled(): boolean {
-  return process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "1";
-}
-
-async function devLoginAction(formData: FormData): Promise<void> {
-  "use server";
-
-  if (!devLoginEnabled()) notFound();
-
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  if (!email) redirect("/dev-login?error=invalid_input");
-
-  const admin = createSupabaseAdminClient();
-  const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-  if (linkErr || !link?.properties?.hashed_token) {
-    redirect(`/dev-login?error=${encodeURIComponent(linkErr?.message ?? "no_token")}`);
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.verifyOtp({
-    token_hash: link!.properties.hashed_token,
-    type: "magiclink",
-  });
-  if (error || !data.session) {
-    redirect(`/dev-login?error=${encodeURIComponent(error?.message ?? "verify_failed")}`);
-  }
-
-  redirect("/agency");
-}
+import { devLoginAction, devLoginEnabled } from "../dev-actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_input: "Enter an email.",
-  no_token: "Supabase did not return a token — user may not exist.",
-  verify_failed: "Session mint failed.",
+  test_login_no_token: "Supabase did not return a token — user may not exist.",
+  test_login_verify_failed: "Session mint failed.",
 };
 
 export default async function DevLoginPage({
@@ -48,7 +14,7 @@ export default async function DevLoginPage({
 }: {
   searchParams: Promise<{ error?: string; email?: string }>;
 }) {
-  if (!devLoginEnabled()) notFound();
+  if (!(await devLoginEnabled())) notFound();
 
   const { error, email } = await searchParams;
   const message = error ? (ERROR_MESSAGES[error] ?? error) : null;

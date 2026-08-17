@@ -5,25 +5,27 @@ import { AnimatedChat } from "@/components/landing/AnimatedChat";
 import { Tutorial } from "@/components/landing/Tutorial";
 import { GlowCard } from "@/components/landing/GlowCard";
 import { RiseSegments } from "@/components/landing/RiseWords";
+import { devLoginAction, devLoginEnabled } from "./(auth)/dev-actions";
 
-export default function Home() {
+export default async function Home() {
+  const demoEnabled = await devLoginEnabled();
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <TopNav />
-      <Hero />
+      <TopNav demoEnabled={demoEnabled} />
+      <Hero demoEnabled={demoEnabled} />
       <FlowSection />
       <PreviewSection />
       <ChatSection />
       <TutorialSection />
       <FeatureGrid />
       <PositioningSection />
-      <CtaSection />
+      <CtaSection demoEnabled={demoEnabled} />
       <Footer />
     </div>
   );
 }
 
-function TopNav() {
+function TopNav({ demoEnabled }: { demoEnabled: boolean }) {
   return (
     <header className="sticky top-0 z-30 border-b hairline backdrop-blur-md">
       <div
@@ -58,6 +60,17 @@ function TopNav() {
           >
             Log in
           </Link>
+          {demoEnabled && (
+            <form action={devLoginAction} className="ml-1">
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent-line)] bg-[var(--accent-soft)] px-3 py-1.5 text-[var(--accent)] transition-colors hover:brightness-95"
+              >
+                <span className="signal-dot bg-[var(--accent)]" />
+                Log in as test
+              </button>
+            </form>
+          )}
           <Link href="/signup" className="btn-dark ml-2">
             Get started
             <svg
@@ -80,7 +93,7 @@ function TopNav() {
   );
 }
 
-function Hero() {
+function Hero({ demoEnabled }: { demoEnabled: boolean }) {
   return (
     <section className="grid-bg relative overflow-hidden border-b hairline">
       <div className="mx-auto max-w-6xl px-6 pb-24 pt-24 sm:pb-32 sm:pt-32">
@@ -119,11 +132,28 @@ function Hero() {
               <path d="m12 5 7 7-7 7" />
             </svg>
           </Link>
-          <Link href="#product" className="btn-ghost">
-            See the product
-          </Link>
+          {demoEnabled ? (
+            <form action={devLoginAction}>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--accent-line)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-medium text-[var(--accent)] transition hover:brightness-95"
+              >
+                <span className="signal-dot bg-[var(--accent)]" />
+                Log in as test
+                <span className="text-[10px] font-medium uppercase tracking-[0.14em] opacity-70">
+                  no email
+                </span>
+              </button>
+            </form>
+          ) : (
+            <Link href="#product" className="btn-ghost">
+              See the product
+            </Link>
+          )}
           <span className="ml-2 text-[12px] text-[var(--subtle)]">
-            No credit card · Ready in 60 seconds
+            {demoEnabled
+              ? "Instant demo · seeded with 10 brands + 45 creators"
+              : "No credit card · Ready in 60 seconds"}
           </span>
         </div>
 
@@ -445,7 +475,7 @@ function PositioningSection() {
   );
 }
 
-function CtaSection() {
+function CtaSection({ demoEnabled }: { demoEnabled: boolean }) {
   return (
     <section className="grid-bg border-b hairline">
       <div className="mx-auto max-w-4xl px-6 py-24 text-center">
@@ -456,7 +486,7 @@ function CtaSection() {
           Sign up in 60 seconds. Bring one campaign. Tell us what broke.
           Pilot agencies get white-glove onboarding.
         </p>
-        <div className="mt-8 flex items-center justify-center gap-3">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link href="/signup" className="btn-dark">
             Start free
             <svg
@@ -473,6 +503,17 @@ function CtaSection() {
               <path d="m12 5 7 7-7 7" />
             </svg>
           </Link>
+          {demoEnabled && (
+            <form action={devLoginAction}>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--accent-line)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-medium text-[var(--accent)] transition hover:brightness-95"
+              >
+                <span className="signal-dot bg-[var(--accent)]" />
+                Log in as test
+              </button>
+            </form>
+          )}
           <Link href="/login" className="btn-ghost">
             Log in
           </Link>
